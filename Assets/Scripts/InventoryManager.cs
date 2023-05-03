@@ -1,25 +1,36 @@
-using Mono.Data.SqliteClient;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.UI;
+using Mono.Data.SqliteClient;
+using static RawPrinterHelper;
+using static Texture2DUtility;
+using TMPro;
 
 public class InventoryManager : MonoBehaviour
 {
+    public UIManager uiManager;
+    public IncomingOutgoingPanel incomingOutgoingPanel;
     public List<InventoryItem> InventoryItems { get; private set; }
-    public List<DeviceLabel> DeviceLabels { get; private set; }
-
+    public List<DeviceLabel> deviceLabels { get; private set; }
     private string connectionString;
-
+    public Texture2D icon1;
+    public Texture2D icon2;
+    public Texture2D icon3;
+    public static LabelMaker labelMaker;
     void Start()
     {
         InventoryItems = new List<InventoryItem>();
-        DeviceLabels = new List<DeviceLabel>();
+        deviceLabels = new List<DeviceLabel>();
         connectionString = "URI=file:" + Application.dataPath + "/InventoryDatabase.db";
         InitializeDatabase();
+        labelMaker = new LabelMaker();
     }
-
     private void InitializeDatabase()
     {
         if (!File.Exists(connectionString))
@@ -39,10 +50,43 @@ public class InventoryManager : MonoBehaviour
         {
             connection.Open();
 
-            string createInventoryItemTable = "CREATE TABLE IF NOT EXISTS InventoryItem(Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Heading TEXT, SubHeading TEXT, LabelName TEXT, Quantity INTEGER)";
-            string createDeviceLabelTable = "CREATE TABLE IF NOT EXISTS DeviceLabel(Id INTEGER PRIMARY KEY AUTOINCREMENT, CompanyName TEXT, ProductHeading TEXT, ProductSubHeading TEXT, LabelName TEXT, QR TEXT)";
+            // Table for item, lot, and serialized items
+            string createInventoryItemTable = "CREATE TABLE IF NOT EXISTS InventoryItem (Name TEXT PRIMARY KEY, Description TEXT, IsLot INTEGER, IsSerialed INTEGER)";
+
+            // Table for item history
+            string createItemHistoryTable = "CREATE TABLE IF NOT EXISTS ItemHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Quantity INTEGER)";
+
+            // Table for lot history
+            string createLotHistoryTable = "CREATE TABLE IF NOT EXISTS LotHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Incoming INTEGER, LotNumber INTEGER)";
+
+            // Table for lot history
+            string createLotCurrent = "CREATE TABLE IF NOT EXISTS LotCurrent (Name TEXT PRIMARY KEY, InLot INTEGER, InDate DATETIME, OutLot INTEGER, OutDate DATETIME)";
+
+            // Table for serialized history
+            string createSerializedHistoryTable = "CREATE TABLE IF NOT EXISTS SerializedHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, SerialNumber TEXT)";
+
+            // Table for DeviceLabels
+            string createDeviceLabelTable = "CREATE TABLE IF NOT EXISTS DeviceLabel (Id INTEGER PRIMARY KEY AUTOINCREMENT, ProductHeading TEXT, ProductSubHeading TEXT, LabelName TEXT)";
+
+            // Table for DeviceLabel history
+            string createDeviceLabelHistoryTable = "CREATE TABLE IF NOT EXISTS DeviceLabelHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, LabelName TEXT, Date DATETIME)";
 
             using (var command = new SqliteCommand(createInventoryItemTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            using (var command = new SqliteCommand(createItemHistoryTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            using (var command = new SqliteCommand(createLotHistoryTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            using (var command = new SqliteCommand(createSerializedHistoryTable, connection))
             {
                 command.ExecuteNonQuery();
             }
@@ -51,219 +95,493 @@ public class InventoryManager : MonoBehaviour
             {
                 command.ExecuteNonQuery();
             }
+
+            using (var command = new SqliteCommand(createDeviceLabelHistoryTable, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+            using (var command = new SqliteCommand(createLotCurrent, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+    public List<string> GetItemNames(int isLot, int isSerialized)
+{
+    List<string> itemNames = new List<string>();
+    using (var connection = new SqliteConnection(connectionString))
+    {
+        connection.Open();
+        string query = "SELECT Name FROM InventoryItem WHERE IsLot = @IsLotParam AND IsSerialed = @IsSerialedParam";
+        using (var command = new SqliteCommand(query, connection))
+        {
+            var isLotParam = new SqliteParameter("@IsLotParam", isLot);
+            var isSerializedParam = new SqliteParameter("@IsSerialedParam", isSerialized);
+            command.Parameters.Add(isLotParam);
+            command.Parameters.Add(isSerializedParam);
+
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    itemNames.Add(reader.GetString(0));
+                }
+            }
         }
     }
 
-    private void ConnectToDatabase()
+    // Print the number of item names found
+    Console.WriteLine($"Found {itemNames.Count} item names");
+
+    return itemNames;
+}
+
+public void UpdateInventoryItem(InventoryItem item)
+{
+    int index = InventoryItems.FindIndex(i => i.Name == item.Name);
+    if (index != -1)
     {
+        InventoryItems[index] = item;
+
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
+            string query = "UPDATE InventoryItem SET Name = @Name, Description = @Description, IsLot = @IsLot, IsSerialed = @IsSerialed WHERE Name = @OldName";
+
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@OldName", item.Name);
+                command.Parameters.Add("@Name", item.Name);
+                command.Parameters.Add("@Description", item.Description);
+                command.Parameters.Add("@IsLot", item.IsLot);
+                command.Parameters.Add("@IsSerialed", item.IsSerialed);
+                command.ExecuteNonQuery();
+            }
         }
     }
+}
+
+public void AddInventoryItem(InventoryItem item)
+{
+    InventoryItems.Add(item);
+
+    using (var connection = new SqliteConnection(connectionString))
+    {
+        connection.Open();
+        string query = "INSERT INTO InventoryItem (Name, Description, IsLot, IsSerialed) VALUES (@Name, @Description, @IsLot, @IsSerialed)";
+
+        using (var command = new SqliteCommand(query, connection))
+        {
+            command.Parameters.Add("@Name", item.Name);
+            command.Parameters.Add("@Description", item.Description);
+            command.Parameters.Add("@IsLot", item.IsLot);
+            command.Parameters.Add("@IsSerialed", item.IsSerialed);
+            command.ExecuteNonQuery();
+        }
+    }
+}
+
+public void AddOrUpdateLotCurrent(InventoryItem item, DateTime date, int inLot, int outLot)
+{
+    using (var connection = new SqliteConnection(connectionString))
+    {
+        connection.Open();
+        string query;
+
+        if (inLot > 0)
+        {
+            query = "INSERT OR REPLACE INTO LotCurrent (Name, InLot, InDate) VALUES (@Name, @InLot, @InDate)";
+        }
+        else
+        {
+            query = "INSERT OR REPLACE INTO LotCurrent (Name, OutLot, OutDate) VALUES (@Name, @OutLot, @OutDate)";
+        }
+
+        using (var command = new SqliteCommand(query, connection))
+        {
+            command.Parameters.Add("@Name", DbType.String).Value = item.Name;
+
+            if (inLot > 0)
+            {
+                command.Parameters.Add("@InLot", DbType.Int32).Value = inLot;
+                command.Parameters.Add("@InDate", DbType.DateTime).Value = date;
+            }
+            else
+            {
+                command.Parameters.Add("@OutLot", DbType.Int32).Value = outLot;
+                command.Parameters.Add("@OutDate", DbType.DateTime).Value = date;
+            }
+
+            command.ExecuteNonQuery();
+        }
+    }
+}
+
+public LotCurrent GetLotCurrent(string itemName)
+{
+    LotCurrent lotCurrent = null;
+
+    using (var connection = new SqliteConnection(connectionString))
+    {
+        connection.Open();
+        string query = "SELECT * FROM LotCurrent WHERE Name = @Name";
+
+        using (var command = new SqliteCommand(query, connection))
+        {
+            command.Parameters.Add("@Name", DbType.String).Value = itemName;
+
+            using (IDataReader reader = command.ExecuteReader())
+            {
+                if (reader.Read())
+                {
+                    lotCurrent = new LotCurrent(
+                        reader.GetString(0),
+                        reader.GetInt32(1),
+                        reader.GetDateTime(2),
+                        reader.GetInt32(3),
+                        reader.GetDateTime(4)
+                    );
+                }
+            }
+        }
+    }
+
+    return lotCurrent;
+}
+
+private void ConnectToDatabase()
+{
+    using (var connection = new SqliteConnection(connectionString))
+    {
+        connection.Open();
+    }
+}
 
     private void LoadDataFromDatabase()
     {
-        // Load inventory items
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
+            string query;
 
-            string query = "SELECT * FROM InventoryItem";
+            query = "SELECT * FROM InventoryItem";
             using (var command = new SqliteCommand(query, connection))
             {
                 using (IDataReader reader = command.ExecuteReader())
                 {
                     while (reader.Read())
                     {
-                        var item = new InventoryItem(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5));
+                        var item = new InventoryItem(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetInt32(4));
                         InventoryItems.Add(item);
                     }
                 }
             }
-        }
 
-        // Load device labels
-        using (var connection = new SqliteConnection(connectionString))
-        {
-            connection.Open();
-
-            string query = "SELECT * FROM DeviceLabel";
+            query = "SELECT * FROM DeviceLabel";
             using (var command = new SqliteCommand(query, connection))
             {
                 using (IDataReader reader = command.ExecuteReader())
                 {
                     while (reader.Read())
                     {
-                        var label = new DeviceLabel(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4));
-                        DeviceLabels.Add(label);
+                        var label = new DeviceLabel(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
+                        deviceLabels.Add(label);
                     }
                 }
             }
         }
     }
-
-    public void AddInventoryItem(string name, string heading, string subHeading, string labelName, int quantity)
+    public void AddDeviceLabel(DeviceLabel label)
     {
-        var item = new InventoryItem(name, heading, subHeading, labelName, quantity);
-        InventoryItems.Add(item);
+        deviceLabels.Add(label);
 
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
+            string query = "INSERT INTO DeviceLabel (ProductHeading, ProductSubHeading, LabelName) VALUES (@ProductHeading, @ProductSubHeading, @LabelName)";
 
-            string query = "INSERT INTO InventoryItem(Name, Heading, SubHeading, LabelName, Quantity) VALUES(@Name, @Heading, @SubHeading, @LabelName, @Quantity)";
             using (var command = new SqliteCommand(query, connection))
             {
-                command.Parameters.AddWithValue("@Name", name);
-                command.Parameters.AddWithValue("@Heading", heading);
-                command.Parameters.AddWithValue("@SubHeading", subHeading);
-                command.Parameters.AddWithValue("@LabelName", labelName);
-                command.Parameters.AddWithValue("@Quantity", quantity);
+                command.Parameters.Add("@ProductHeading", label.ProductHeading);
+                command.Parameters.Add("@ProductSubHeading", label.ProductSubHeading);
+                command.Parameters.Add("@LabelName", label.LabelName);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+    public void AddItemHistory(InventoryItem item, DateTime date, int quantity)
+    {
+        using (var connection = new SqliteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO ItemHistory (Name, Date, Quantity) VALUES (@Name, @Date, @Quantity)";
 
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@Name", item.Name);
+                command.Parameters.Add("@Date", date);
+                command.Parameters.Add("@Quantity", quantity);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+    public void AddLotHistory(InventoryItem item, DateTime date, int incoming, int lotNumber)
+    {
+        using (var connection = new SqliteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO LotHistory (Name, Date, Incoming, LotNumber) VALUES (@Name, @Date, @Incoming, @LotNumber)";
+
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@Name", item.Name);
+                command.Parameters.Add("@Date", date);
+                command.Parameters.Add("@Incoming", incoming);
+                command.Parameters.Add("@LotNumber", lotNumber);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+    public void AddSerializedHistory(InventoryItem item, DateTime date, string serialNumber)
+    {
+        using (var connection = new SqliteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO SerializedHistory (Name, Date, SerialNumber) VALUES (@Name, @Date, @SerialNumber)";
+
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@Name", item.Name);
+                command.Parameters.Add("@Date", date);
+                command.Parameters.Add("@SerialNumber", serialNumber);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+    public void AddDeviceLabelHistory(DeviceLabel label, DateTime date)
+    {
+        using (var connection = new SqliteConnection(connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO DeviceLabelHistory (LabelName, Date) VALUES (@LabelName, @Date)";
+
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@LabelName", label.LabelName);
+                command.Parameters.Add("@Date", date);
                 command.ExecuteNonQuery();
             }
         }
     }
 
-    public void RemoveInventoryItem(int id)
+    public void UpdateDeviceLabel(DeviceLabel label)
     {
-        InventoryItems.RemoveAll(x => x.Id == id);
-
-        using (var connection = new SqliteConnection(connectionString))
+        int index = deviceLabels.FindIndex(l => l.LabelName == label.LabelName);
+        if (index != -1)
         {
-            connection.Open();
+            deviceLabels[index] = label;
 
-            string query = "DELETE FROM InventoryItem WHERE Id = @Id";
-            using (var command = new SqliteCommand(query, connection))
+            using (var connection = new SqliteConnection(connectionString))
             {
-                command.Parameters.AddWithValue("@Id", id);
-                command.ExecuteNonQuery();
+                connection.Open();
+                string query = "UPDATE DeviceLabel SET ProductHeading = @ProductHeading, ProductSubHeading = @ProductSubHeading, LabelName = @LabelName WHERE LabelName = @OldLabelName";
+
+                using (var command = new SqliteCommand(query, connection))
+                {
+                    command.Parameters.Add("@OldLabelName", label.LabelName);
+                    command.Parameters.Add("@ProductHeading", label.ProductHeading);
+                    command.Parameters.Add("@ProductSubHeading", label.ProductSubHeading);
+                    command.Parameters.Add("@LabelName", label.LabelName);
+                    command.ExecuteNonQuery();
+                }
             }
         }
     }
-
-    public void AddDeviceLabel(string companyName, string productHeading, string productSubHeading, string labelName, string qr)
+    public InventoryItem GetInventoryItemByName(string name)
     {
-        var label = new DeviceLabel(companyName, productHeading, productSubHeading, labelName, qr);
-        DeviceLabels.Add(label);
-
+        return InventoryItems.Find(item => item.Name == name);
+    }
+    public DeviceLabel GetDeviceLabelByName(string name)
+    {
+        return deviceLabels.Find(label => label.LabelName == name);
+    }
+    public List<DeviceLabel> GetDeviceLabelNames()
+    {
+        deviceLabels = new List<DeviceLabel>();
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
-
-            string query = "INSERT INTO DeviceLabel(CompanyName, ProductHeading, ProductSubHeading, LabelName, QR) VALUES(@CompanyName, @ProductHeading, @ProductSubHeading, @LabelName, @QR)";
+            string query = "SELECT LabelName, ProductHeading, ProductSubHeading FROM DeviceLabel";
             using (var command = new SqliteCommand(query, connection))
             {
-                command.Parameters.AddWithValue("@CompanyName", companyName);
-                command.Parameters.AddWithValue("@ProductHeading", productHeading);
-                command.Parameters.AddWithValue("@ProductSubHeading", productSubHeading);
-                command.Parameters.AddWithValue("@LabelName", labelName);
-                command.Parameters.AddWithValue("@QR", qr);
-
-                command.ExecuteNonQuery();
+                using (IDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string labelName = reader.GetString(1);
+                        string productHeading = reader.GetString(2);
+                        string productSubHeading = reader.GetString(0);
+                        DeviceLabel deviceLabel = new DeviceLabel(labelName, productHeading, productSubHeading);
+                        deviceLabels.Add(deviceLabel);
+                    }
+                }
             }
         }
+        return deviceLabels;
+    }
+    public void ShowSearchResults(string searchTerm)
+    {
+        List<InventoryItem> searchResults = InventoryItems.Where(item => item.Name.Contains(searchTerm)).ToList();
+        uiManager.DisplaySearchResults(searchResults);
+    }
+    public string GenerateInventoryLabelData(InventoryItem item, int lotNumber = 0, string serialNumber = "")
+    {
+        string labelData = $"Item Name: {item.Name}\nDescription: {item.Description}\n";
+        if (item.IsLot == 1)
+        {
+            labelData += $"Lot Number: {lotNumber}\n";
+        }
+        if (item.IsSerialed == 1)
+        {
+            labelData += $"Serial Number: {serialNumber}\n";
+        }
+        return labelData;
     }
 
-    public void RemoveDeviceLabel(int id)
+    public Texture2D GenerateDeviceLabelData(DeviceLabel label)
     {
-        DeviceLabels.RemoveAll(x => x.Id == id);
+        string labelText = $"HTS Inc\n{label.ProductHeading}\n{label.ProductSubHeading}\n";
+        List<StringTexturePair> pairs = new List<StringTexturePair> {
+        new StringTexturePair("Text1", icon1),
+        new StringTexturePair("Text2", icon2),
+        new StringTexturePair("Text3", icon3)
+    };
 
-        using (var connection = new SqliteConnection(connectionString))
+        labelText += "Icon1: " + pairs[0].Text + "\nIcon2: " + pairs[1].Text + "\nIcon3: " + pairs[2].Text + "\n";
+        //string qrCodeData = $"{label.ProductHeading},{label.ProductSubHeading}," + pairs[0].Text + "," + pairs[1].Text + "," + pairs[2].Text;
+        string qrCodeData = $"test";
+        Debug.LogError("GenerateQRCode selected. qrCodeData: " + qrCodeData);
+        Texture2D qrCodeImage = null;
+        qrCodeImage = labelMaker.GenerateQRCode(qrCodeData);
+        Debug.LogError("GenerateQRCode done.");
+        int labelWidth = 1200;
+        int labelHeight = 1800;
+        Debug.LogError("GenerateLabelTexture selected.");
+        Texture2D labelTexture = labelMaker.GenerateLabelTexture(labelText, pairs, qrCodeImage, labelWidth, labelHeight);
+        return labelTexture;
+    }
+
+    public async Task PrintInventoryLabelsAsync(InventoryItem item, int printQuantity, string printerIPAddress, int lotNumber = 0, string serialNumber = "")
+    {
+
+        for (int i = 0; i < printQuantity; i++)
         {
-            connection.Open();
-
-            string query = "DELETE FROM DeviceLabel WHERE Id = @Id";
-            using (var command = new SqliteCommand(query, connection))
-            {
-                command.Parameters.AddWithValue("@Id", id);
-                command.ExecuteNonQuery();
-            }
+            string labelData = GenerateInventoryLabelData(item, lotNumber, serialNumber);
+            int x = 0;
+            int y = 0;
+            int labelWidth = 1200;
+            int labelHeight = 1800;
+            string zplCommand = labelMaker.CreateZPLCommandString(labelData, x, y, labelWidth, labelHeight);
+            await labelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
+            await Task.Delay(1000);
+        }
+    }
+    public async Task PrintDeviceLabelsAsync(DeviceLabel label, int printQuantity)
+    {
+        Debug.LogError("PrintDeviceLabelsAsync started.");        
+        for (int i = 0; i < printQuantity; i++)
+        {
+            Debug.LogError("GenerateDeviceLabelData selected.");
+            Texture2D labelTexture = null;
+            labelTexture = GenerateDeviceLabelData(label);
+            Debug.LogError("GenerateDeviceLabelData finished.");
+            int x = 0;
+            int y = 0;
+            int labelWidth = 1200;
+            int labelHeight = 1800;
+            string zplCommand = labelMaker.CreateZPLTexture(labelTexture, x, y, labelWidth, labelHeight);
+            labelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
         }
     }
 }
-
-[System.Serializable]
-public class InventoryItems
-{
-    public int Id;
-    public string Name;
-    public string Heading;
-    public string SubHeading;
-    public string LabelName;
-    public int Quantity;
-
-    public InventoryItem(int id, string name, string heading, string subHeading, string labelName, int quantity)
-    {
-        Id = id;
-        Name = name;
-        Heading = heading;
-        SubHeading = subHeading;
-        LabelName = labelName;
-        Quantity = quantity;
-    }
-}
-
-[System.Serializable]
-public class DeviceLabel
-{
-    public int Id;
-    public string CompanyName;
-    public string ProductHeading;
-    public string ProductSubHeading;
-    public string LabelName;
-    public string QR;
-
-    public DeviceLabel(int id, string companyName, string productHeading, string productSubHeading, string labelName, string qr)
-    {
-        Id = id;
-        CompanyName = companyName;
-        ProductHeading = productHeading;
-        ProductSubHeading = productSubHeading;
-        LabelName = labelName;
-        QR = qr;
-    }
-}
-
-[System.Serializable]
 public class InventoryItem
 {
-    public int Id;
-    public string Name;
-    public string Heading;
-    public string SubHeading;
-    public string LabelName;
-    public int Quantity;
-    public string LotNumber;
+    public int Id { get; set; }
+    public string Name { get; set; }    
+    public DateTime Date { get; set; }    
+    public string Description { get; set; }
+    public string SerialNumber { get; set; }
+    public int Quantity { get; set; }
+    public int LotNumber { get; set; }
+    public int IsLot { get; set; }
+    public int IsSerialed { get; set; }
+    public int Incoming { get; set; }
 
-    public InventoryItem(int id, string name, string heading, string subHeading, string labelName, int quantity, string lotNumber)
+    public InventoryItem(int id, string name, string description, int isLot, int isSerialed) // item&lot&serialied items
     {
-        Id = id;
+        Name = name; // unique
+        Description = description; 
+        IsLot = isLot; // unique
+        IsSerialed = isSerialed; // unique
+    }
+    public InventoryItem(string name, int amount) // item history
+    {
+        Name = name; 
+        Date = DateTime.Now;
+        Quantity = amount;
+    }
+    public InventoryItem(string name, string description, int incoming, int lotNum) // lot history
+    {
         Name = name;
-        Heading = heading;
-        SubHeading = subHeading;
-        LabelName = labelName;
-        Quantity = quantity;
-        LotNumber = lotNumber;
+        Date = DateTime.Now;
+        Incoming = incoming;
+        LotNumber = lotNum;
+    }
+    public InventoryItem(string name, string sn) // serialied history
+    {
+        Name = name;
+        Date = DateTime.Now;
+        SerialNumber = sn;
     }
 }
 
-[System.Serializable]
 public class DeviceLabel
 {
-    public int Id;
-    public string CompanyName;
-    public string ProductHeading;
-    public string ProductSubHeading;
-    public string LabelName;
+    public int ProductId { get; set; }
+    public string ProductHeading { get; set; }
+    public string ProductSubHeading { get; set; }
+    public string LabelName { get; set; }
 
-    public DeviceLabel(int id, string companyName, string productHeading, string productSubHeading, string labelName)
+    public DeviceLabel(string productHeading, string productSubHeading, string labelName) 
     {
-        Id = id;
-        CompanyName = companyName;
         ProductHeading = productHeading;
         ProductSubHeading = productSubHeading;
         LabelName = labelName;
+    }
+    public DeviceLabel(int id, string productHeading, string productSubHeading, string labelName)
+    {
+        ProductId = id;
+        ProductHeading = productHeading;
+        ProductSubHeading = productSubHeading;
+        LabelName = labelName;
+    }
+}
+
+// Define the LotCurrent class if it hasn't been defined already
+public class LotCurrent
+{
+    public string Name { get; set; }
+    public int InLot { get; set; }
+    public DateTime InDate { get; set; }
+    public int OutLot { get; set; }
+    public DateTime OutDate { get; set; }
+
+    public LotCurrent(string name, int inlot, DateTime indate, int outlot, DateTime outdate)
+    {
+        Name = name;
+        InLot = inlot;
+        InDate = indate;
+        OutLot = outlot;
+        OutDate = outdate;
     }
 }

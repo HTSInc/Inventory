@@ -1,103 +1,381 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class IncomingOutgoingPanel : MonoBehaviour
 {
     public InventoryManager inventoryManager;
-    public Dropdown inventoryDropdown;
-    public InputField numberOfPackagesInput, trackingNumberInput, notesInput, productNameInput, labelNameInput, productHeading, productSubHeading, lblName;
-    public Text currentDateDisplay;
-    public Toggle incomingOutgoingToggle;
-    public Button cancelButton, addButton, removeButton;
+    public UIManager uiManager;
+    public TMP_Dropdown inventoryDropdown;
+    private Toggle incomingOutgoingToggle;
+    private GameObject[] inputFields = new GameObject[7];
+    private Button centerActionButton;
+    private Button centerCancelButton;
 
-
-    public void Initialize(InventoryManager manager)
+    public void Initialize(InventoryManager manager, UIManager uiInstance)
     {
         inventoryManager = manager;
-        UpdateUI();
+        uiManager = uiInstance;
+        centerActionButton = uiManager.uiObjects["actionButton"].GetComponent<Button>();
+        centerCancelButton = uiManager.uiObjects["cancelButton"].GetComponent<Button>();
+        inventoryDropdown = uiManager.uiObjects["Dropdown"].GetComponent<TMP_Dropdown>();
+        incomingOutgoingToggle = uiManager.uiObjects["Toggle"].GetComponent<Toggle>();
+
+        for (int i = 0; i < uiManager.maxCChildren; i++)
+        {
+            inputFields[i] = uiManager.uiObjects[$"InputField{i}"].gameObject;
+        }
     }
 
+    public void SetCenterButtonActions(string panelName, int action)
+    {
+        centerActionButton.onClick.RemoveAllListeners();
+        centerCancelButton.onClick.RemoveAllListeners();
+
+        centerActionButton.onClick.AddListener(() => OnSubmit(panelName, action));
+        centerCancelButton.onClick.AddListener(() => OnCancel());
+    }
+    public static List<string> itemNames;
+    public static List<DeviceLabel> deviceLabels;
     public void UpdateUI()
     {
-        // Populate the dropdown with item names from the InventoryManager
         inventoryDropdown.ClearOptions();
-        List<string> itemNames = inventoryManager.GetItemNames();
+
+        switch (uiManager.curView)
+        {
+            case "LotHandling":
+                itemNames = inventoryManager.GetItemNames(1, 0);
+                break;
+            case "Shipment":
+                deviceLabels = inventoryManager.GetDeviceLabelNames();
+                itemNames = deviceLabels.Select(label => $"{label.LabelName}").ToList();
+                break;
+            case "Inventory":
+                itemNames = inventoryManager.GetItemNames(0, 0);
+                break;
+            default:
+                break;
+        }
+
         inventoryDropdown.AddOptions(itemNames);
-
-        // Set current date display
-        currentDateDisplay.text = DateTime.Now.ToString("yyyy-MM-dd");
+        uiManager.OnDropdownValueChanged(inventoryDropdown.value);
+        uiManager.uiObjects["Date"].GetComponent<TextMeshProUGUI>().text = DateTime.Now.ToString("ddMMyy");
     }
-    public void OnSubmit()
+
+    public void HandleLeftButtonAction(string panelName)
     {
-        // Process user input and call inventoryManager.UpdateInventoryItem() with the updated item
-        string selectedItemName = inventoryDropdown.options[inventoryDropdown.value].text;
-        InventoryItems.InventoryItem item = inventoryManager.GetInventoryItemByName(selectedItemName);
+        uiManager.EnableRightButtons(false);
+        uiManager.EnableCenterContent(false);
+        Button[] leftButtons = uiManager.leftButtonParent.GetComponentsInChildren<Button>();
+        Color defaultColor = Color.white;
+        Color selectedColor = new Color(0.75f, 0.75f, 0.75f);
 
-        int numberOfPackages = int.Parse(numberOfPackagesInput.text);
-        bool isIncoming = incomingOutgoingToggle.isOn;
-
-        if (item is InventoryItems.LotItem lotItem)
+        for (int i = 0; i < leftButtons.Length; i++)
         {
-            if (isIncoming)
-            {
-                lotItem.Quantity += numberOfPackages;
-                lotItem.LastLot += numberOfPackages;
-            }
-            else
-            {
-                lotItem.Quantity -= numberOfPackages;
-                lotItem.LastLot -= numberOfPackages;
-            }
-        }
-        else if (item is InventoryItems.SerialedItem serialedItem)
-        {
-            if (isIncoming)
-            {
-                serialedItem.Quantity += numberOfPackages;
-            }
-            else
-            {
-                serialedItem.Quantity -= numberOfPackages;
-            }
-        }
-        else if (item is InventoryItems.InventoryItem nonLotItem)
-        {
-            if (isIncoming)
-            {
-                nonLotItem.Quantity += numberOfPackages;
-            }
-            else
-            {
-                nonLotItem.Quantity -= numberOfPackages;
-            }
+            uiManager.SetButtonColor(leftButtons[i], defaultColor);
         }
 
-        if (isIncoming)
-            inventoryManager.AddQuantity(selectedItemName, numberOfPackages);
-        else
-            inventoryManager.RemoveQuantity(selectedItemName, numberOfPackages);
+        switch (panelName)
+        {
+            case "LotHandling":
+                uiManager.curView = "LotHandling";
+                uiManager.curViewLKey = "L0";
+                uiManager.SetButtonColor(leftButtons[0], selectedColor);
+                break;
+            case "Shipment":
+                uiManager.curView = "Shipment";
+                uiManager.curViewLKey = "L1";
+                uiManager.SetButtonColor(leftButtons[1], selectedColor);
+                break;
+            case "Inventory":
+                uiManager.curView = "Inventory";
+                uiManager.curViewLKey = "L2";
+                uiManager.SetButtonColor(leftButtons[2], selectedColor);
+                break;
+            default:
+                break;
+        }
 
+        uiManager.UpdateButtonTexts("right");
+        uiManager.EnableRightButtons(true);
+    }
+
+    public void HandleRightButtonAction(string panelName, int action)
+    {
+        uiManager.EnableCenterContent(false);
+        uiManager.UpdateCenterContent(panelName, action);
+        uiManager.EnableCenterContent(true);
+        SetCenterButtonActions(panelName, action);
         UpdateUI();
     }
+
+    private async Task PrintInventoryLabelsAsync()
+    {
+        string itemName = inventoryDropdown.options[inventoryDropdown.value].text;
+        InventoryItem item = inventoryManager.GetInventoryItemByName(itemName);
+
+        if (item == null)
+        {
+            Debug.LogError("Invalid item selected.");
+            return;
+        }
+
+        int printQuantity = int.Parse(inputFields[8].GetComponent<TMP_InputField>().text.Trim());
+        string printerIPAddress = inputFields[9].GetComponent<TMP_InputField>().text.Trim();
+        int lotNumber = item.IsLot == 1 ? int.Parse(inputFields[10].GetComponent<TMP_InputField>().text.Trim()) : 0;
+        string serialNumber = item.IsSerialed == 1 ? inputFields[11].GetComponent<TMP_InputField>().text.Trim() : "";
+
+        await inventoryManager.PrintInventoryLabelsAsync(item, printQuantity, printerIPAddress, lotNumber, serialNumber);
+    }
+
+    private async Task PrintDeviceLabelsAsync()
+    {
+        string labelName = inventoryDropdown.options[inventoryDropdown.value].text;
+        DeviceLabel label = inventoryManager.GetDeviceLabelByName(labelName);
+        if (label == null)
+        {
+            Debug.LogError("Invalid label selected.");
+            return;
+        }
+        Debug.LogError("Valid label selected.");
+        await inventoryManager.PrintDeviceLabelsAsync(label, 1);
+    }
+
+    private void ClearInputFields()
+    {
+        for (int i = 0; i <= uiManager.maxCChildren; i++)
+        {
+            uiManager.uiObjects[$"InputField{i}"].GetComponent<TMP_InputField>().text = "";
+        }
+    }
+    int isLot = 0;
+    int isSerialed = 0;
+
+
+    private void AddOrUpdateInventoryItem()
+    {
+        string itemName = uiManager.uiObjects["InputField0"].GetComponent<TMP_InputField>().text.Trim();
+        string itemDescription = uiManager.uiObjects["InputField1"].GetComponent<TMP_InputField>().text.Trim();
+
+        if (string.IsNullOrEmpty(itemName) || string.IsNullOrEmpty(itemDescription))
+        {
+            Debug.LogError("Item name and description are required.");
+            return;
+        }
+
+        InventoryItem existingItem = inventoryManager.GetInventoryItemByName(itemName);
+
+        if (existingItem != null)
+        {
+            existingItem.Description = itemDescription;
+            existingItem.IsLot = isLot;
+            existingItem.IsSerialed = isSerialed;
+            inventoryManager.UpdateInventoryItem(existingItem);
+            Debug.Log("Updated existing inventory item: " + itemName);
+        }
+        else
+        {
+            InventoryItem newItem = new InventoryItem(0, itemName, itemDescription, isLot, isSerialed);
+            inventoryManager.AddInventoryItem(newItem);
+            Debug.Log("Added new inventory item: " + itemName);
+        }
+
+        ClearInputFields();
+    }
+    private void AddOrUpdateDeviceLabelItem()
+    {
+        bool isAdding = uiManager.uiObjects["Toggle"].GetComponent<Toggle>().isOn;
+        string productHeading = uiManager.uiObjects["InputField0"].GetComponent<TMP_InputField>().text.Trim();
+        string productSubheading = uiManager.uiObjects["InputField1"].GetComponent<TMP_InputField>().text.Trim();
+        string labelName = uiManager.uiObjects["InputField2"].GetComponent<TMP_InputField>().text.Trim();
+
+        if (string.IsNullOrEmpty(productHeading) || string.IsNullOrEmpty(productSubheading) || string.IsNullOrEmpty(labelName))
+        {
+            Debug.LogError("Product heading, subheading, and label name are required.");
+            return;
+        }
+
+        DeviceLabel existingLabel = inventoryManager.GetDeviceLabelByName(labelName);
+
+        if (isAdding)
+        {
+            if (existingLabel != null)
+            {
+                Debug.LogError("Label with the same name already exists.");
+                return;
+            }
+
+            DeviceLabel newLabel = new DeviceLabel(0, productHeading, productSubheading, labelName);
+            inventoryManager.AddDeviceLabel(newLabel);
+            Debug.Log("Added new device label: " + labelName);
+        }
+        else
+        {
+            if (existingLabel == null)
+            {
+                Debug.LogError("Label not found.");
+                return;
+            }
+
+            existingLabel.ProductHeading = productHeading;
+            existingLabel.ProductSubHeading = productSubheading;
+            inventoryManager.UpdateDeviceLabel(existingLabel);
+            Debug.Log("Updated existing device label: " + labelName);
+        }
+
+        ClearInputFields();
+    }
+    private void AddToInventoryHistory(int index)
+    {
+        DateTime date = DateTime.Now;
+        string itemName = uiManager.uiObjects["Dropdown"].GetComponent<TMP_Dropdown>().options[inventoryDropdown.value].text;
+        InventoryItem item = inventoryManager.GetInventoryItemByName(itemName);
+
+        if (item == null)
+        {
+            Debug.LogError("Invalid item selected.");
+            return;
+        }
+
+        int quantity = int.Parse(uiManager.uiObjects["InputField3"].GetComponent<TMP_InputField>().text.Trim());
+
+        switch (index)
+        {
+            case 0:
+                bool isIncoming = uiManager.uiObjects["Toggle"].GetComponent<Toggle>().isOn;
+
+                if (isIncoming)
+                {
+                    int lotNumber = int.Parse(uiManager.uiObjects["InputField4"].GetComponent<TMP_InputField>().text.Trim());
+                    inventoryManager.AddLotHistory(item, date, quantity, lotNumber);
+                    inventoryManager.AddOrUpdateLotCurrent(item, date, quantity, -1);
+                    Debug.Log("Added incoming lot history.");
+                }
+                else
+                {
+                    int lotNumber = int.Parse(uiManager.uiObjects["InputField5"].GetComponent<TMP_InputField>().text.Trim());
+                    inventoryManager.AddLotHistory(item, date, -quantity, lotNumber);
+                    inventoryManager.AddOrUpdateLotCurrent(item, date, -quantity, -1);
+                    Debug.Log("Added outgoing lot history.");
+                }
+
+                ClearInputFields();
+                break;
+            case 1:
+                string orderNumber = uiManager.uiObjects["InputField6"].GetComponent<TMP_InputField>().text.Trim();
+                string accountNumber = uiManager.uiObjects["InputField7"].GetComponent<TMP_InputField>().text.Trim();
+                Debug.Log($"Shipment saved for Order #{orderNumber}, Account #{accountNumber}");
+                ClearInputFields();
+                break;
+            case 2:
+                bool isAdding = uiManager.uiObjects["Toggle"].GetComponent<Toggle>().isOn;
+
+                if (isAdding)
+                {
+                    inventoryManager.AddItemHistory(item, date, quantity);
+                    Debug.Log($"Added {quantity} to current inventory of {itemName}");
+                }
+                else
+                {
+                    inventoryManager.AddItemHistory(item, date, -quantity);
+                    Debug.Log($"Removed {quantity} from current inventory of {itemName}");
+                }
+
+                ClearInputFields();
+                break;
+            default:
+                break;
+        }
+    }
+    private void AddToDeviceLabelHistory()
+    {
+        DateTime date = DateTime.Now;
+        string itemName = uiManager.uiObjects["Dropdown"].GetComponent<TMP_Dropdown>().options[inventoryDropdown.value].text;
+        DeviceLabel lbl = inventoryManager.GetDeviceLabelByName(itemName);
+
+        if (lbl == null)
+        {
+            Debug.LogError("Invalid item selected.");
+            return;
+        }
+        inventoryManager.AddDeviceLabelHistory(lbl, date);
+    }
+
+    public void OnSubmit(string panelName, int action)
+    {
+        switch (panelName)
+        {
+            case "LotHandling":
+                switch (action)
+                {
+                    case 0:
+                        AddToInventoryHistory(0);
+                        Task.Run(async () => await PrintInventoryLabelsAsync()).ConfigureAwait(true);
+                        break;
+                    case 1:
+                        isLot = 1;
+                        isSerialed = 0;
+                        AddOrUpdateInventoryItem();
+                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        break;
+                    case 2:
+                        if (uiManager.curViewLKey == "L0")
+                        {
+                            Task.Run(async () => await PrintInventoryLabelsAsync());
+                        }
+                        else if (uiManager.curViewLKey == "L1")
+                        {
+                            Task.Run(async () => await PrintDeviceLabelsAsync());
+                        }
+                        break;
+                }
+                break;
+            case "Shipment":
+                switch (action)
+                {
+                    case 0:
+                        PrintDeviceLabelsAsync();
+                        AddToDeviceLabelHistory();
+                        break;
+                    case 1:
+                        AddOrUpdateDeviceLabelItem();
+                        break;
+                    case 2:
+                        Task.Run(async () => await PrintDeviceLabelsAsync());
+                        break;
+                }
+                break;
+            case "Inventory":
+                switch (action)
+                {
+                    case 0:
+                        AddToInventoryHistory(2);
+                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        break;
+                    case 1:
+                        isLot = 0;
+                        isSerialed = 0;
+                        AddOrUpdateInventoryItem();
+                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        break;
+                }
+                break;
+        }
+    }
+
 
     public void OnCancel()
     {
         gameObject.SetActive(false);
-    }
-
-    public void OnAdd()
-    {
-        InventoryItems.DeviceLabel deviceLabel = new InventoryItems.DeviceLabel(productNameInput.text, productHeading.text, productSubHeading.text, lblName.text, "");
-        inventoryManager.AddDeviceLabel(deviceLabel);
-        inventoryManager.SaveInventory();
-    }
-
-    public void OnRemove()
-    {
-        InventoryItems.DeviceLabel deviceLabelToRemove = inventoryManager.GetDeviceLabelByName(lblName.text);
-        inventoryManager.RemoveDeviceLabel(deviceLabelToRemove);
-        inventoryManager.SaveInventory();
+        uiManager.EnableAllLeftButtons();
+        uiManager.EnableRightButtons(false);
+        uiManager.EnableCenterContent(false);
     }
 }
+

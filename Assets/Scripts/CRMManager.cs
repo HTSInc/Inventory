@@ -21,11 +21,11 @@ public class CRMManager : MonoBehaviour
     }
     public void AddEntry(CRMEntry e)
     {
-        Entries.Add(e);
-        if (e.CallType == "order")
-        {
-            InventoryManager.Inventory.FindAll(x => e.ProductOrdered.Split(',').Contains(x.Name)).ForEach(x => x.Quantity--);
-        }
+       // Entries.Add(e);
+       // if (e.CallType == "order")
+       // {
+        //    InventoryManager.Inventory.FindAll(x => e.ProductOrdered.Split(',').Contains(x.Name)).ForEach(x => x.Quantity--);
+        //}
     }
     public void HandleCRMAction(string action)
     {
@@ -88,13 +88,13 @@ public class CRMManager : MonoBehaviour
 
     public void UpdateInventoryQuantities()
     {
-        Entries.FindAll(x => x.CallType == "order").ForEach(e =>
-        {
-            foreach (string p in e.ProductOrdered.Split(','))
-            {
-                InventoryItem i = InventoryManager.Inventory.Find(x => x.Name == p);
-                i.Quantity--;
-            }
-        });
+        //Entries.FindAll(x => x.CallType == "order").ForEach(e =>
+        //{
+        //    foreach (string p in e.ProductOrdered.Split(','))
+        //    {
+        //        InventoryItem i = InventoryManager.Inventory.Find(x => x.Name == p);
+        //        i.Quantity--;
+        //    }
+        //});
     }
 }

@@ -1,292 +1,332 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
+using System.Linq;
 
 public class UIManager : MonoBehaviour
 {
     public InventoryManager inventoryManager;
-    public CRMManager crmManager;
-    private Dictionary<string, GameObject> panels;
-    public InputField itemNameInput, newNameInput, newDescriptionInput, newQuantityInput, newLotInput, newLastLotInput, searchTermInput;
     public IncomingOutgoingPanel incomingOutgoingPanel;
-    public Canvas canVas;
-    public GameObject canVasObject;
-    public void Initialize(InventoryManager manager, CRMManager crmManagerInstance)
+    public Canvas canvas;
+    public GameObject rightButtonParent;
+    public GameObject leftButtonParent;
+    public GameObject centerContentParent;
+    public int maxRChildren;
+    public int maxLChildren;
+    public int maxCChildren;
+    public string curView = "None";
+    public string curViewKey = "L0R0";
+    public string curViewLKey = "L0";
+    public Dictionary<string, GameObject> uiObjects;
+
+    public object LeanTween { get; private set; }
+
+    public void UpdateButtonTexts(string buttonParent)
     {
-        inventoryManager = manager;
-        crmManager = crmManagerInstance;
-        incomingOutgoingPanel.Initialize(inventoryManager);
-    }
-    public void ShowCRMPanel()
-    {
-        SetActivePanel("CRM");
-    }
-
-    public void ShowIncomingOutgoingPanel()
-    {
-        SetActivePanel("IncomingOut");
-    }
-
-    void Start()
-    {
-        crmManager = new CRMManager(inventoryManager);
-        CreateCanvasAndPanels();
-        CreateLeftSidebarButtons();
-        CreateRightSidebarButtons();
-        SetActivePanel("MainMenu");
-        itemNameInput = CreateInputField(panels["Inventory"].transform, "ItemNameInput", new Vector2(0.3f, 0.7f), new Vector2(0.7f, 0.8f));
-        newNameInput = CreateInputField(panels["Inventory"].transform, "NewNameInput", new Vector2(0.3f, 0.55f), new Vector2(0.7f, 0.65f));
-        newDescriptionInput = CreateInputField(panels["Inventory"].transform, "NewDescriptionInput", new Vector2(0.3f, 0.4f), new Vector2(0.7f, 0.5f));
-        newQuantityInput = CreateInputField(panels["Inventory"].transform, "NewQuantityInput", new Vector2(0.3f, 0.25f), new Vector2(0.7f, 0.35f));
-        newLotInput = CreateInputField(panels["Inventory"].transform, "NewLotInput", new Vector2(0.3f, 0.1f), new Vector2(0.7f, 0.2f));
-        newLastLotInput = CreateInputField(panels["Inventory"].transform, "NewLastLotInput", new Vector2(0.3f, -0.05f), new Vector2(0, 0.05f));
-        searchTermInput = CreateInputField(panels["Inventory"].transform, "SearchTermInput", new Vector2(0.3f, -0.2f), new Vector2(0.7f, -0.1f));
-    }
-
-    private InputField CreateInputField(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
-    {
-        GameObject inputFieldObject = new GameObject(name);
-        inputFieldObject.transform.SetParent(parent);
-        RectTransform rectTransform = inputFieldObject.AddComponent<RectTransform>();
-        rectTransform.anchorMin = anchorMin;
-        rectTransform.anchorMax = anchorMax;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        GameObject textArea = new GameObject("Text Area");
-        textArea.transform.SetParent(inputFieldObject.transform);
-        RectTransform textAreaRectTransform = textArea.AddComponent<RectTransform>();
-        textAreaRectTransform.anchorMin = Vector2.zero;
-        textAreaRectTransform.anchorMax = Vector2.one;
-        textAreaRectTransform.anchoredPosition = Vector2.zero;
-        textAreaRectTransform.sizeDelta = Vector2.zero;
-
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        InputField inputField = inputFieldObject.AddComponent<InputField>();
-        inputField.textComponent = CreateText(textArea.transform, "").GetComponent<Text>();
-        inputField.textComponent.color = Color.black;
-
-        return inputField;
-    }
-
-    private GameObject CreateText(Transform parent, string text)
-    {
-        GameObject textObject = new GameObject("Text");
-        textObject.transform.SetParent(parent);
-        Text buttonText = textObject.AddComponent<Text>();
-        buttonText.text = text;
-        buttonText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        buttonText.fontSize = 24;
-        buttonText.color = Color.white;
-        buttonText.alignment = TextAnchor.MiddleCenter;
-
-        RectTransform rectTransform = textObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = Vector2.zero;
-        rectTransform.anchorMax = Vector2.one;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        return textObject;
-    }
-
-    private void SetSubButtonAnchors(Button button, int index, int totalCount)
-    {
-        RectTransform rectTransform = button.GetComponent<RectTransform>();
-        float buttonHeight = 1f / totalCount;
-        float buttonTopAnchor = 1f - index * buttonHeight;
-        rectTransform.anchorMin = new Vector2(0.2f, buttonTopAnchor - buttonHeight);
-        rectTransform.anchorMax = new Vector2(0.8f, buttonTopAnchor);
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-    }
-
-    private void CreateCanvasAndPanels()
-    {
-        canVas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canVasObject.AddComponent<CanvasScaler>();
-        canVasObject.AddComponent<GraphicRaycaster>();
-
-        panels = new Dictionary<string, GameObject>
+        Button[] buttonArray = buttonParent == "left" ? leftButtonParent.GetComponentsInChildren<Button>() : rightButtonParent.GetComponentsInChildren<Button>();
+        for (int i = 0; i < buttonArray.Length; i++)
         {
-            { "LotHandling", CreatePanel(canVas.transform, "LotHandling", new Vector2(0f, 1f), new Vector2(0.2f, 0f)) },
-            { "DeviceLabeling", CreatePanel(canVas.transform, "DeviceLabeling", new Vector2(0f, 1f), new Vector2(0.2f, 0f)) },
-            { "Inventory", CreatePanel(canVas.transform, "Inventory", new Vector2(0f, 1f), new Vector2(0.2f, 0f)) },
-            { "CRM", CreatePanel(canVas.transform, "CRM", new Vector2(0, 1f), new Vector2(0.2f, 0f)) },
-            { "MainMenu", CreatePanel(canVas.transform, "MainMenu", new Vector2(0, 1f), new Vector2(0.2f, 0f)) }
-        };
-    }
-
-    private Dropdown CreateDropdown(Transform parent, string name, List<string> options, Vector2 anchorMin, Vector2 anchorMax)
-    {
-        GameObject dropdownObject = new GameObject(name);
-        dropdownObject.transform.SetParent(parent);
-        RectTransform rectTransform = dropdownObject.AddComponent<RectTransform>();
-        rectTransform.anchorMin = anchorMin;
-        rectTransform.anchorMax = anchorMax;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        Dropdown dropdown = dropdownObject.AddComponent<Dropdown>();
-        dropdown.AddOptions(options);
-
-        return dropdown;
-    }
-
-    private Toggle CreateToggle(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
-    {
-        GameObject toggleObject = new GameObject(name);
-        toggleObject.transform.SetParent(parent);
-        RectTransform rectTransform = toggleObject.AddComponent<RectTransform>();
-        rectTransform.anchorMin = anchorMin;
-        rectTransform.anchorMax = anchorMax;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        Toggle toggle = toggleObject.AddComponent<Toggle>();
-
-        return toggle;
-    }
-
-    private GameObject CreatePanel(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
-    {
-        GameObject panelObject = new GameObject(name);
-        panelObject.transform.SetParent(parent);
-        RectTransform rectTransform = panelObject.AddComponent<RectTransform>();
-        rectTransform.anchorMin = anchorMin;
-        rectTransform.anchorMax = anchorMax;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-        panelObject.SetActive(false);
-
-        return panelObject;
-    }
-
-    public void SetActivePanel(string panelName)
-    {
-        foreach (var panel in panels)
-        {
-            panel.Value.SetActive(panel.Key == panelName);
-        }
-    }
-
-    private void CreateLeftSidebarButtons()
-    {
-        string[] buttonNames = { "LotHandling", "DeviceLabel", "Inventory", "CRM" };
-        for (int i = 0; i < buttonNames.Length; i++)
-        {
-            GameObject buttonObject = new GameObject(buttonNames[i] + "Button");
-            buttonObject.transform.SetParent(panels["MainMenu"].transform);
-            Button button = buttonObject.AddComponent<Button>();
-            Image buttonImage = buttonObject.AddComponent<Image>();
-            buttonImage.color = Color.gray;
-            RectTransform rectTransform = buttonObject.GetComponent<RectTransform>();
-            rectTransform.anchorMin = new Vector2(0f, 1f - (i + 1) * 0.25f);
-            rectTransform.anchorMax = new Vector2(1f, (1f - i) * 0.25f);
-            rectTransform.anchoredPosition = Vector2.zero;
-            rectTransform.sizeDelta = Vector2.zero;
-            int index = i;
-            button.onClick.AddListener(() => SetActivePanel(buttonNames[index]));
-            Text buttonText = CreateButtonText(buttonObject.transform, buttonNames[i]);
-        }
-    }
-
-    private Text CreateButtonText(Transform parent, string text)
-    {
-        GameObject textObject = new GameObject("Text");
-        textObject.transform.SetParent(parent);
-        Text buttonText = textObject.AddComponent<Text>();
-        buttonText.text = text;
-        buttonText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        buttonText.fontSize = 24;
-        buttonText.color = Color.white;
-        buttonText.alignment = TextAnchor.MiddleCenter;
-        RectTransform rectTransform = textObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = Vector2.zero;
-        rectTransform.anchorMax = Vector2.one;
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        return buttonText;
-    }
-
-    private void CreateRightSidebarButtons()
-    {
-        Dictionary<string, List<string>> subButtons = new Dictionary<string, List<string>>
-        {
-            {"LotHandling", new List<string>{"Incoming/Outgoing", "Add/Remove Lot Inventory item", "Reprint"}},
-            {"DeviceLabeling", new List<string>{"Shipment", "Preprep", "Add/Remove Device Label item", "Reprint"}},
-            {"Inventory", new List<string>{"Update Inventory Item", "Get Item By Name", "Search Inventory Items"}},
-            {"CRM", new List<string>{"Add CRM Entry", "Remove CRM Entry", "View CRM Entries"}}
-        };
-
-        foreach (var mainButton in subButtons)
-        {
-            for (int i = 0; i < mainButton.Value.Count; i++)
+            string key;
+            if (buttonParent == "left")
             {
-                GameObject buttonObject = new GameObject(mainButton.Key + mainButton.Value[i] + "Button");
-                buttonObject.transform.SetParent(panels[mainButton.Key].transform);
-                Button button = buttonObject.AddComponent<Button>();
-                button.transition = Selectable.Transition.ColorTint;
-                button.colors = CreateColorBlock(new Color(0.3f, 0.3f, 0.3f), new Color(0.5f, 0.5f, 0.5f), new Color(0.1f, 0.1f, 0.1f));
-                SetSubButtonAnchors(button, i, mainButton.Value.Count);
-                int index = i;
-
-                // Add onClick listeners with appropriate arguments for HandleInventoryMenuAction
-                if (mainButton.Key == "Inventory")
+                key = $"L{i}";
+                if (AppManager.uiTextDictionary.ContainsKey(key) && !AppManager.uiTextDictionary.Keys.Any(k => k.StartsWith("R")))
                 {
-                    button.onClick.AddListener(() => inventoryManager.HandleInventoryMenuAction(mainButton.Value[index], itemNameInput.text, newNameInput.text, newDescriptionInput.text, newQuantityInput.text, newLotInput.text, newLastLotInput.text, searchTermInput.text));
+                    buttonArray[i].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
                 }
-                else if (mainButton.Key == "CRM")
+            }
+            else
+            {
+                key = curViewLKey + $"R{i}";
+                if (AppManager.uiTextDictionary.ContainsKey(key))
                 {
-                    button.onClick.AddListener(() => crmManager.HandleCRMAction(mainButton.Value[index]));
+                    buttonArray[i].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
                 }
-
-                Text buttonText = CreateButtonText(buttonObject.transform, mainButton.Value[i]);
             }
         }
     }
-    public void DisplayInventoryItem(InventoryItems.InventoryItem item)
+    private void EnableDropDown(bool enable)
     {
-        GameObject itemDetailsPanel = GameObject.Find("ItemDetailsPanel");
-        itemDetailsPanel.transform.Find("ItemName").GetComponent<Text>().text = item.Name;
-        itemDetailsPanel.transform.Find("ItemDescription").GetComponent<Text>().text = item.Description;
-        itemDetailsPanel.transform.Find("ItemQuantity").GetComponent<Text>().text = item.Quantity.ToString();
-        itemDetailsPanel.transform.Find("ItemLot").GetComponent<Text>().text = item.LastLot.ToString();
-        itemDetailsPanel.transform.Find("ItemLastLot").GetComponent<Text>().text = item.LastLot.ToString();
-        itemDetailsPanel.SetActive(true);
-    }
-
-    public void UpdateInventoryTable(List<InventoryItems.LotItem> items)
-    {
-        GameObject inventoryTable = GameObject.Find("InventoryTable");
-        foreach (Transform child in inventoryTable.transform)
+        uiObjects["Dropdown"].SetActive(enable);
+        if (enable)
         {
-            Destroy(child.gameObject);
-        }
-        foreach (InventoryItems.LotItem item in items)
-        {
-            GameObject rowPrefab = Resources.Load("InventoryRowPrefab") as GameObject;
-            GameObject newRow = Instantiate(rowPrefab, inventoryTable.transform);
-            newRow.transform.Find("ItemName").GetComponent<Text>().text = item.Name;
-            newRow.transform.Find("ItemDescription").GetComponent<Text>().text = item.Description;
-            newRow.transform.Find("ItemQuantity").GetComponent<Text>().text = item.Quantity.ToString();
-            newRow.transform.Find("ItemLot").GetComponent<Text>().text = item.Lot.ToString();
-            newRow.transform.Find("ItemLastLot").GetComponent<Text>().text = item.LastLot.ToString();
-            newRow.transform.SetParent(inventoryTable.transform, false);
+            string key = curViewKey + "C0";
+            if (AppManager.uiTextDictionary.ContainsKey(key))
+            {
+                uiObjects["Dropdown"].transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
+            }
         }
     }
-
-    private ColorBlock CreateColorBlock(Color normalColor, Color highlightedColor, Color pressedColor)
+    public void OnDropdownValueChanged(int selectedIndex)
     {
-        ColorBlock colorBlock = new ColorBlock();
-        colorBlock.normalColor = normalColor;
-        colorBlock.highlightedColor = highlightedColor;
-        colorBlock.pressedColor = pressedColor;
-        colorBlock.disabledColor = Color.gray;
-        colorBlock.colorMultiplier = 1;
-        colorBlock.fadeDuration = 0.1f;
-        return colorBlock;
+        if (curView == "Shipment")
+        {
+            string selectedProductSubHeading = IncomingOutgoingPanel.deviceLabels[selectedIndex].ProductSubHeading;
+            string selectedProductHeading = IncomingOutgoingPanel.deviceLabels[selectedIndex].ProductHeading;
+            uiObjects["LabelDescriptor"].GetComponent<TextMeshProUGUI>().text = "Product: " + selectedProductHeading + " - "+selectedProductSubHeading;
+        }
+    }
+    private void EnableLblTitle(bool enable)
+    {
+        uiObjects["LabelDescriptor"].SetActive(enable);
+    }
+    private void EnableToggle(bool enable)
+    {
+        uiObjects["Toggle"].SetActive(enable);
+        if (enable)
+        {
+            string key = curViewKey + "C1";
+            if (AppManager.uiTextDictionary.ContainsKey(key))
+            {
+                uiObjects["Toggle"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
+            }
+        }
+    }
+    private void EnableAction(bool enable)
+    {
+        uiObjects["actionButton"].SetActive(enable);
+        uiObjects["cancelButton"].SetActive(enable);
+        if (enable)
+        {
+            string keyA1 = curViewKey + "A1";
+            if (AppManager.uiTextDictionary.ContainsKey(keyA1))
+            {
+                uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[keyA1];
+            }
+            string keyA2 = curViewKey + "A2";
+            if (AppManager.uiTextDictionary.ContainsKey(keyA2))
+            {
+                uiObjects["cancelButton"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[keyA2];
+            }
+        }
+    }
+    public void EnableRightButtons(bool enable)
+    {
+        uiObjects["rightButtons"].SetActive(enable);
+    }
+    public void EnableCenterContent(bool enable)
+    {
+        uiObjects["centerContent"].SetActive(enable);
+    }
+    private void EnableInputFields(int index)
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            uiObjects[$"InputField{i}"].SetActive(i <= index ? true : false);
+            if (i <= index)
+            {
+                string key = curViewKey + "C" + (i + 2).ToString();
+                if (AppManager.uiTextDictionary.ContainsKey(key))
+                {                    
+                    uiObjects[$"InputField{i}"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
+                    SetInputFieldPlaceholder(uiObjects[$"InputField{i}"].GetComponent<TMP_InputField>(), "Enter " + AppManager.uiTextDictionary[key]);
+                }
+            }
+        }
+    }
+    public void SetButtonColor(Button button, Color color)
+    {
+        ColorBlock colorBlock = button.colors;
+        colorBlock.normalColor = color == Color.white ? new Color(0.2f, 0.4f, 0.8f) : color;
+        colorBlock.highlightedColor = Color.Lerp(colorBlock.normalColor, Color.white, 0.5f);
+        colorBlock.pressedColor = Color.Lerp(colorBlock.normalColor, Color.black, 0.5f);
+        button.colors = colorBlock;
+    }
+    public void Initialize(InventoryManager manager, Canvas can, IncomingOutgoingPanel iop)
+    {
+        inventoryManager = manager;
+        inventoryManager.uiManager = this;
+        incomingOutgoingPanel = iop;
+        canvas = can;
+        InitializeUIObjects();
+        SetDefaultButtonActions("left");
+        SetDefaultButtonActions("right");
+
+        Button[] leftButtonArray = leftButtonParent.GetComponentsInChildren<Button>();
+        for (int i = 0; i < leftButtonArray.Length; i++)
+        {
+            SetButtonColor(leftButtonArray[i], Color.white);
+        }
+
+        Button[] rightButtonArray = rightButtonParent.GetComponentsInChildren<Button>();
+        for (int i = 0; i < rightButtonArray.Length; i++)
+        {
+            SetButtonColor(rightButtonArray[i], Color.white);
+        }
+    }
+    private void InitializeUIObjects()
+    {
+        uiObjects = new Dictionary<string, GameObject>();
+        uiObjects["canvas"] = canvas.gameObject;
+        uiObjects["leftButtons"] = canvas.transform.Find("Left Buttons").gameObject;
+        leftButtonParent = uiObjects["leftButtons"];
+        uiObjects["rightButtons"] = canvas.transform.Find("Right Buttons").gameObject;
+        rightButtonParent = uiObjects["rightButtons"];
+        uiObjects["centerContent"] = canvas.transform.Find("Center Content").gameObject;
+        centerContentParent = uiObjects["centerContent"];
+
+        maxRChildren = uiObjects["rightButtons"].transform.childCount;
+        maxLChildren = uiObjects["leftButtons"].transform.childCount;
+
+        for (int i = 0; i < uiObjects["leftButtons"].transform.childCount; i++)
+        {
+            uiObjects[$"L{i}"] = uiObjects["leftButtons"].transform.GetChild(i).gameObject;
+        }
+
+        for (int i = 0; i < uiObjects["rightButtons"].transform.childCount; i++)
+        {
+            uiObjects[$"R{i}"] = uiObjects["rightButtons"].transform.GetChild(i).gameObject;
+        }
+
+        uiObjects["Dropdown"] = uiObjects["centerContent"].transform.Find("Dropdown").gameObject;
+        uiObjects["Toggle"] = uiObjects["centerContent"].transform.Find("Toggle").gameObject;
+        uiObjects["Date"] = uiObjects["centerContent"].transform.Find("Date Display").gameObject;
+        uiObjects["Title"] = uiObjects["centerContent"].transform.Find("Title").gameObject;
+        uiObjects["LabelDescriptor"] = uiObjects["centerContent"].transform.Find("LabelDescriptor").gameObject;
+        uiObjects["Dropdown"].GetComponent<TMP_Dropdown>().onValueChanged.AddListener(OnDropdownValueChanged);
+
+        int inputFieldIndex = 0;
+        Transform currentInputField = uiObjects["centerContent"].transform.Find($"InputField (TMP) ({inputFieldIndex})");
+        while (currentInputField != null)
+        {
+            uiObjects[$"InputField{inputFieldIndex}"] = currentInputField.gameObject;
+            maxCChildren = inputFieldIndex;
+            inputFieldIndex++;
+            currentInputField = uiObjects["centerContent"].transform.Find($"InputField (TMP) ({inputFieldIndex})");
+        }
+
+        uiObjects["actionButton"] = uiObjects["centerContent"].transform.Find("Button (0)").gameObject;
+        uiObjects["cancelButton"] = uiObjects["centerContent"].transform.Find("Button (1)").gameObject;
+        EnableRightButtons(false);
+        EnableCenterContent(false);
+        UpdateButtonTexts("left");
+    }
+    public void UpdateCenterContent(string panelName, int action)
+    {
+        switch (panelName)
+        {
+            case "LotHandling":
+                switch (action)
+                {
+                    case 0:
+                        curViewKey = "L0R0";
+                        SetUIElements("LotHandling", 1, true, true, false);
+                        break;
+                    case 1:
+                        curViewKey = "L0R1";
+                        SetUIElements("LotHandling", 2, false, false, false);
+                        break;
+                    case 2:
+                        curViewKey = "L0R2";
+                        SetUIElements("LotHandling", 1, true, true, false);
+                        break;
+                }
+                break;
+            case "Shipment":
+                switch (action)
+                {
+                    case 0:
+                        curViewKey = "L1R0";
+                        SetUIElements("Shipment",  1, true, false, true);
+                        break;
+                    case 1:
+                        curViewKey = "L1R1";
+                        SetUIElements("Shipment", 3, false, true, false);
+                        break;
+                    case 2:
+                        curViewKey = "L1R2";
+                        SetUIElements("Shipment",  3, true, false, false);
+                        break;
+                }
+                break;
+            case "Inventory":
+                switch (action)
+                {
+                    case 0:
+                        curViewKey = "L2R0";
+                        SetUIElements("Inventory", 1, true, true, false);
+                        break;
+                    case 1:
+                        curViewKey = "L2R1";
+                        SetUIElements("Inventory", 2, false, true, false);
+                        break;
+                }
+                break;
+        }
+    }
+    public void SetInputFieldPlaceholder(TMP_InputField inputField, string placeholderText)
+    {
+        TMP_Text placeholder = inputField.placeholder.GetComponent<TMP_Text>();
+        placeholder.text = placeholderText;
+        placeholder.fontSize = 14;
+        placeholder.alignment = TextAlignmentOptions.Midline;
+        placeholder.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+    }
+    private void SetUIElements(string panelName, int inputFieldsCount, bool isDropDown, bool isToggle, bool isLblName)
+    {
+        EnableDropDown(isDropDown);
+        EnableLblTitle(isLblName);
+        EnableToggle(isToggle);
+        EnableInputFields(inputFieldsCount);
+        EnableAction(true);
+
+        uiObjects["Title"].GetComponent<TextMeshProUGUI>().text = panelName;
+        uiObjects["Title"].GetComponent<TextMeshProUGUI>().fontSize = 24;
+        uiObjects["Title"].GetComponent<TextMeshProUGUI>().color = new Color(0.2f, 0.4f, 0.8f);
+
+        switch (panelName)
+        {
+            case "LotHandling":
+                uiObjects["Title"].GetComponent<TextMeshProUGUI>().text = "Lot Handling";
+                break;
+            case "Shipment":
+                uiObjects["Title"].GetComponent<TextMeshProUGUI>().text = "Shipment";
+                break;
+            case "Inventory":
+                uiObjects["Title"].GetComponent<TextMeshProUGUI>().text = "Inventory";
+                break;
+        }
+    }
+  
+    public void SetDefaultButtonActions(string buttonParent)
+    {
+        Button[] buttonArray = buttonParent == "left" ? leftButtonParent.GetComponentsInChildren<Button>() : rightButtonParent.GetComponentsInChildren<Button>();
+        if (buttonParent == "left")
+        {
+            buttonArray[0].onClick.AddListener(() => { incomingOutgoingPanel.HandleLeftButtonAction("LotHandling"); });
+            buttonArray[1].onClick.AddListener(() => { incomingOutgoingPanel.HandleLeftButtonAction("Shipment");  });
+            buttonArray[2].onClick.AddListener(() => { incomingOutgoingPanel.HandleLeftButtonAction("Inventory");  });
+        }
+        else
+        {
+            buttonArray[0].onClick.AddListener(() => { incomingOutgoingPanel.HandleRightButtonAction(curView, 0);});
+            buttonArray[1].onClick.AddListener(() => { incomingOutgoingPanel.HandleRightButtonAction(curView, 1);  });
+            buttonArray[2].onClick.AddListener(() => { incomingOutgoingPanel.HandleRightButtonAction(curView, 2);  });
+        }
+    }
+    public void DisplaySearchResults(List<InventoryItem> searchResults)
+    {
+        if (searchResults != null && searchResults.Count > 0)
+        {
+            // Display search results in a suitable UI element, such as a list or table
+            // This will depend on your specific UI implementation
+        }
+        else
+        {
+            Debug.Log("No search results found");
+        }
+    }
+    public void EnableAllLeftButtons()
+    {
+        Button[] leftButtonArray = leftButtonParent.GetComponentsInChildren<Button>();
+        for (int i = 0; i < leftButtonArray.Length; i++)
+        {
+            leftButtonArray[i].interactable = true;
+        }
+    }
+    public void UpdateUI()
+    {
+        incomingOutgoingPanel.UpdateUI();
     }
 }
