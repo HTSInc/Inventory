@@ -33,14 +33,20 @@ public class IncomingOutgoingPanel : MonoBehaviour
         }
     }
 
+    public async void RunAsyncWithoutBlocking(Func<Task> asyncMethod)
+    {
+        await Task.Run(async () => await asyncMethod());
+    }
     public void SetCenterButtonActions(string panelName, int action)
     {
         centerActionButton.onClick.RemoveAllListeners();
         centerCancelButton.onClick.RemoveAllListeners();
 
-        centerActionButton.onClick.AddListener(() => OnSubmit(panelName, action));
+        centerActionButton.onClick.AddListener(() => RunAsyncWithoutBlocking(() => OnSubmit(panelName, action)));
         centerCancelButton.onClick.AddListener(() => OnCancel());
     }
+
+
     public static List<string> itemNames;
     public static List<DeviceLabel> deviceLabels;
     public void UpdateUI()
@@ -119,7 +125,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
     {
         string itemName = inventoryDropdown.options[inventoryDropdown.value].text;
         InventoryItem item = inventoryManager.GetInventoryItemByName(itemName);
-
         if (item == null)
         {
             Debug.LogError("Invalid item selected.");
@@ -134,7 +139,8 @@ public class IncomingOutgoingPanel : MonoBehaviour
         await inventoryManager.PrintInventoryLabelsAsync(item, printQuantity, printerIPAddress, lotNumber, serialNumber);
     }
 
-    private async Task PrintDeviceLabelsAsync()
+
+    private void PrintDeviceLabels()
     {
         string labelName = inventoryDropdown.options[inventoryDropdown.value].text;
         DeviceLabel label = inventoryManager.GetDeviceLabelByName(labelName);
@@ -143,9 +149,12 @@ public class IncomingOutgoingPanel : MonoBehaviour
             Debug.LogError("Invalid label selected.");
             return;
         }
+
         Debug.LogError("Valid label selected.");
-        await inventoryManager.PrintDeviceLabelsAsync(label, 1);
+        _ = Task.Run(() => inventoryManager.PrintDeviceLabelsAsync(label, 1));
     }
+
+
 
     private void ClearInputFields()
     {
@@ -307,7 +316,7 @@ public class IncomingOutgoingPanel : MonoBehaviour
         inventoryManager.AddDeviceLabelHistory(lbl, date);
     }
 
-    public void OnSubmit(string panelName, int action)
+    public async Task OnSubmit(string panelName, int action)
     {
         switch (panelName)
         {
@@ -316,22 +325,22 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 {
                     case 0:
                         AddToInventoryHistory(0);
-                        Task.Run(async () => await PrintInventoryLabelsAsync()).ConfigureAwait(true);
+                        await PrintInventoryLabelsAsync();
                         break;
                     case 1:
                         isLot = 1;
                         isSerialed = 0;
                         AddOrUpdateInventoryItem();
-                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        await PrintInventoryLabelsAsync();
                         break;
                     case 2:
                         if (uiManager.curViewLKey == "L0")
                         {
-                            Task.Run(async () => await PrintInventoryLabelsAsync());
+                            await PrintInventoryLabelsAsync();
                         }
                         else if (uiManager.curViewLKey == "L1")
                         {
-                            Task.Run(async () => await PrintDeviceLabelsAsync());
+                            PrintDeviceLabels();
                         }
                         break;
                 }
@@ -340,14 +349,14 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 switch (action)
                 {
                     case 0:
-                        PrintDeviceLabelsAsync();
-                        AddToDeviceLabelHistory();
+                        PrintDeviceLabels();
+                        //AddToDeviceLabelHistory();
                         break;
                     case 1:
                         AddOrUpdateDeviceLabelItem();
                         break;
                     case 2:
-                        Task.Run(async () => await PrintDeviceLabelsAsync());
+                        PrintDeviceLabels();
                         break;
                 }
                 break;
@@ -356,18 +365,19 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 {
                     case 0:
                         AddToInventoryHistory(2);
-                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        await PrintInventoryLabelsAsync();
                         break;
                     case 1:
                         isLot = 0;
                         isSerialed = 0;
                         AddOrUpdateInventoryItem();
-                        Task.Run(async () => await PrintInventoryLabelsAsync());
+                        await PrintInventoryLabelsAsync();
                         break;
                 }
                 break;
         }
     }
+
 
 
     public void OnCancel()

@@ -11,6 +11,8 @@ using Mono.Data.SqliteClient;
 using static RawPrinterHelper;
 using static Texture2DUtility;
 using TMPro;
+using System.Collections;
+using SharpZebra.Printing;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -19,17 +21,35 @@ public class InventoryManager : MonoBehaviour
     public List<InventoryItem> InventoryItems { get; private set; }
     public List<DeviceLabel> deviceLabels { get; private set; }
     private string connectionString;
-    public Texture2D icon1;
-    public Texture2D icon2;
-    public Texture2D icon3;
-    public static LabelMaker labelMaker;
+    public static Texture2D icon1;
+    public static Texture2D icon2;
+    public static Texture2D icon3;
+    public static List<StringTexturePair> pairs = new List<StringTexturePair> {
+            new StringTexturePair("Text1", icon1),
+            new StringTexturePair("Text2", icon2),
+            new StringTexturePair("Text3", icon3)
+        };
+    string companyText = $"HTS Inc";
+    string labelNameText = $"LBL-23-004";
+    string productText = $"HTS2";
+    string subheadingText = $"Online Vergence Exercises.";
+    string pkNumText = $"of";
+    string addressText = @"HTS Inc.
+        6756 S Kings Ranch Rd.
+        Gold Canyon, AZ 85118
+        800-346-4925";
+    int pkNum = 1;
     void Start()
     {
         InventoryItems = new List<InventoryItem>();
         deviceLabels = new List<DeviceLabel>();
         connectionString = "URI=file:" + Application.dataPath + "/InventoryDatabase.db";
         InitializeDatabase();
-        labelMaker = new LabelMaker();
+        unityMainThreadDispatcher = GameObject.Find("UnityMainThreadDispatcher").GetComponent<UnityMainThreadDispatcher>();
+        unityMainThreadDispatcher = UnityMainThreadDispatcher.Instance();
+        icon1 = Resources.Load<Texture2D>("Resourcefolder/icon1");
+        icon2 = Resources.Load<Texture2D>("Resourcefolder/icon2");
+        icon3 = Resources.Load<Texture2D>("Resourcefolder/icon3");
     }
     private void InitializeDatabase()
     {
@@ -447,33 +467,29 @@ private void ConnectToDatabase()
         }
         return labelData;
     }
-
-    public Texture2D GenerateDeviceLabelData(DeviceLabel label)
+    private UnityMainThreadDispatcher unityMainThreadDispatcher;
+    public Task WrapCoroutineInTask(Coroutine coroutine)
     {
-        string labelText = $"HTS Inc\n{label.ProductHeading}\n{label.ProductSubHeading}\n";
-        List<StringTexturePair> pairs = new List<StringTexturePair> {
-        new StringTexturePair("Text1", icon1),
-        new StringTexturePair("Text2", icon2),
-        new StringTexturePair("Text3", icon3)
-    };
-
-        labelText += "Icon1: " + pairs[0].Text + "\nIcon2: " + pairs[1].Text + "\nIcon3: " + pairs[2].Text + "\n";
-        //string qrCodeData = $"{label.ProductHeading},{label.ProductSubHeading}," + pairs[0].Text + "," + pairs[1].Text + "," + pairs[2].Text;
+        TaskCompletionSource<object> tcs = new TaskCompletionSource<object>();
+        StartCoroutine(CompleteWhenDone(coroutine, tcs));
+        return tcs.Task;
+    }
+    private IEnumerator CompleteWhenDone(Coroutine coroutine, TaskCompletionSource<object> tcs)
+    {
+        yield return coroutine;
+        tcs.SetResult(null);
+    }
+    public async Task<Texture2D> GenerateDeviceLabelQR(DeviceLabel label)
+    {
         string qrCodeData = $"test";
         Debug.LogError("GenerateQRCode selected. qrCodeData: " + qrCodeData);
         Texture2D qrCodeImage = null;
-        qrCodeImage = labelMaker.GenerateQRCode(qrCodeData);
-        Debug.LogError("GenerateQRCode done.");
-        int labelWidth = 1200;
-        int labelHeight = 1800;
-        Debug.LogError("GenerateLabelTexture selected.");
-        Texture2D labelTexture = labelMaker.GenerateLabelTexture(labelText, pairs, qrCodeImage, labelWidth, labelHeight);
-        return labelTexture;
+        qrCodeImage = LabelMaker.GenerateQRFromGoogleAPI(qrCodeData);
+        return qrCodeImage;
     }
 
     public async Task PrintInventoryLabelsAsync(InventoryItem item, int printQuantity, string printerIPAddress, int lotNumber = 0, string serialNumber = "")
     {
-
         for (int i = 0; i < printQuantity; i++)
         {
             string labelData = GenerateInventoryLabelData(item, lotNumber, serialNumber);
@@ -481,27 +497,47 @@ private void ConnectToDatabase()
             int y = 0;
             int labelWidth = 1200;
             int labelHeight = 1800;
-            string zplCommand = labelMaker.CreateZPLCommandString(labelData, x, y, labelWidth, labelHeight);
-            await labelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
-            await Task.Delay(1000);
+         //   string zplCommand = LabelMaker.CreateZPLCommandString(labelData, x, y, labelWidth, labelHeight);
+         //   await LabelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
+         //   await Task.Delay(TimeSpan.FromSeconds(1));
         }
     }
+    PrinterSettings settings = new PrinterSettings
+    {
+        PrinterName = "Zebra",
+        PrinterType = 'A',
+        PrinterPort = 0,
+        AlignLeft = 0,
+        AlignTop = 0,
+        AlignTearOff = 0,
+        Darkness = 30,
+        PrintSpeed = 5,
+        Width = 800,
+        Length = 1200,
+        RamDrive = 'E'
+    };
     public async Task PrintDeviceLabelsAsync(DeviceLabel label, int printQuantity)
     {
-        Debug.LogError("PrintDeviceLabelsAsync started.");        
-        for (int i = 0; i < printQuantity; i++)
+        pkNum = 1;
+        companyText = $"HTSInc";
+        labelNameText = $"{label.LabelName}";
+        productText = $"{label.ProductHeading}";
+        subheadingText = $"{label.ProductSubHeading}";
+        pkNumText = $"{pkNum}of{printQuantity}";
+        pairs = new List<StringTexturePair> { new StringTexturePair("InstructionsforUse", icon1), new StringTexturePair("RxOnly", icon2), new StringTexturePair(addressText, icon3) };
+        unityMainThreadDispatcher.Enqueue(async () =>
         {
-            Debug.LogError("GenerateDeviceLabelData selected.");
-            Texture2D labelTexture = null;
-            labelTexture = GenerateDeviceLabelData(label);
-            Debug.LogError("GenerateDeviceLabelData finished.");
-            int x = 0;
-            int y = 0;
-            int labelWidth = 1200;
-            int labelHeight = 1800;
-            string zplCommand = labelMaker.CreateZPLTexture(labelTexture, x, y, labelWidth, labelHeight);
-            labelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
-        }
+            for (int i = 0; i < printQuantity; i++)
+            {
+                Debug.LogError("GenerateDeviceLabelDataAsync selected.");
+                Texture2D qrTexture = null;
+                qrTexture = await GenerateDeviceLabelQR(label);
+                Debug.LogError(qrTexture.width);
+                pkNum++;
+                // Send label to printer
+                await LabelMaker.SendTexture2DToUSBPrinterAsync(qrTexture);
+            }
+        });
     }
 }
 public class InventoryItem

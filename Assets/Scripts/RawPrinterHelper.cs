@@ -48,6 +48,7 @@ public class RawPrinterHelper : MonoBehaviour
         di.pDocName = "My C#.NET RAW Document";
         di.pDataType = "RAW";
         // Open the printer.
+        Debug.LogError(szPrinterName);
         if (OpenPrinter(szPrinterName.Normalize(), out hPrinter, IntPtr.Zero))
         {
             // Start a document.
@@ -105,9 +106,12 @@ public class RawPrinterHelper : MonoBehaviour
         Int32 dwCount;
         // How many characters are in the string?
         dwCount = szString.Length;
+        Debug.LogError(dwCount);
         // Assume that the printer is expecting ANSI text, and then convert
         // the string to ANSI text.
         pBytes = Marshal.StringToCoTaskMemAnsi(szString);
+        Debug.LogError(szString);
+        Debug.LogError(pBytes);
         // Send the converted ANSI string to the printer.
         SendBytesToPrinter(szPrinterName, pBytes, dwCount);
         Marshal.FreeCoTaskMem(pBytes);
