@@ -1,11 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using SharpZebra;
 using SharpZebra.Printing;
 using UnityEngine;
+using Zen.Barcode;
+using Graphics = System.Drawing.Graphics;
 
 public static class LabelMaker
 {
@@ -26,33 +31,67 @@ public static class LabelMaker
             return texture;
         }
     }
-
-    public static void SendZPLCommandToUSBPrinter(string zplCommand)
+    public static string SendZPLCommandToUSBPrinter(string zplCommand)
     {
         PrinterSettings x = new PrinterSettings();
         x.PrinterName = "Zebra";
         x.PrinterPort = 0;
+       
         IZebraPrinter printer = new USBPrinter(x);
-        // Convert the zplCommand string to a byte array
-        RawPrinterHelper.SendStringToPrinter("Zebra", zplCommand);
-    }
+        printer.Settings = x;
+        byte[] y = Encoding.ASCII.GetBytes(zplCommand);
+        printer.Print(y);
 
-    public static async Task SendTexture2DToUSBPrinterAsync(Texture2D texture, int x = 0, int y = 0)
+        return zplCommand;
+    }
+    public static Texture2D GenerateUPCABarcodeTexture(string barcodeValue, int width = 300, int height = 150)
     {
-        string zplCommand = CreateZPLCommand(texture, x, y);
+        var barcode = BarcodeDrawFactory.GetSymbology(BarcodeSymbology.Code128);
+        Image barcodeImage = barcode.Draw(barcodeValue, width, height);
+
+        Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        Color32[] barcodeColors = new Color32[width * height];
+
+        using (Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+        {
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.DrawImage(barcodeImage, 0, 0, width, height);
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    System.Drawing.Color color = bitmap.GetPixel(x, y);
+                    barcodeColors[x + y * width] = new Color32(color.R, color.G, color.B, color.A);
+                }
+            }
+        }
+
+        texture.SetPixels32(barcodeColors);
+        texture.Apply();
+
+        return texture;
+    }
+    public static async Task SendTexture2DToUSBPrinterAsync(Texture2D texture)
+    {
+        string zplCommand = CreateZPLCommand(texture);
         Debug.LogError(texture.width);
         SendZPLCommandToUSBPrinter(zplCommand);
     }
 
-    public static string CreateZPLCommand(Texture2D texture, int x, int y)
+    public static string CreateZPLCommand(Texture2D texture)
     {
         byte[] imageData = ConvertTexture2DToByteArray(texture);
+        ZplImageConverter zplConverter = new ZplImageConverter();
+        Image image = null;
         using (var ms = new MemoryStream(imageData))
         {
-            Image image = Image.FromStream(ms);
-            ZplImageConverter zplConverter = new ZplImageConverter(texture.width, texture.height);
-            string zplCommand = zplConverter.BuildLabel(image);
-            return zplCommand;
+            image = Image.FromStream(ms);
+            zplConverter = new ZplImageConverter(1200, 800);
         }
+        string zplCommand = zplConverter.BuildLabel(image);
+        return zplCommand;
     }
 }

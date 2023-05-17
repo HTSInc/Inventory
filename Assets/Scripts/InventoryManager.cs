@@ -13,6 +13,8 @@ using static Texture2DUtility;
 using TMPro;
 using System.Collections;
 using SharpZebra.Printing;
+using Object = UnityEngine.Object;
+using static UIManager;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -156,21 +158,42 @@ public class InventoryManager : MonoBehaviour
     return itemNames;
 }
 
-public void UpdateInventoryItem(InventoryItem item)
-{
-    int index = InventoryItems.FindIndex(i => i.Name == item.Name);
-    if (index != -1)
+    public void UpdateInventoryItem(InventoryItem item)
     {
-        InventoryItems[index] = item;
+        int index = InventoryItems.FindIndex(i => i.Name == item.Name);
+        if (index != -1)
+        {
+            InventoryItems[index] = item;
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                connection.Open();
+                string query = "UPDATE InventoryItem SET Name = @Name, Description = @Description, IsLot = @IsLot, IsSerialed = @IsSerialed WHERE Name = @OldName";
+
+                using (var command = new SqliteCommand(query, connection))
+                {
+                    command.Parameters.Add("@OldName", item.Name);
+                    command.Parameters.Add("@Name", item.Name);
+                    command.Parameters.Add("@Description", item.Description);
+                    command.Parameters.Add("@IsLot", item.IsLot);
+                    command.Parameters.Add("@IsSerialed", item.IsSerialed);
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+    }
+
+    public void AddInventoryItem(InventoryItem item)
+    {
+        InventoryItems.Add(item);
 
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
-            string query = "UPDATE InventoryItem SET Name = @Name, Description = @Description, IsLot = @IsLot, IsSerialed = @IsSerialed WHERE Name = @OldName";
+            string query = "INSERT INTO InventoryItem (Name, Description, IsLot, IsSerialed) VALUES (@Name, @Description, @IsLot, @IsSerialed)";
 
             using (var command = new SqliteCommand(query, connection))
             {
-                command.Parameters.Add("@OldName", item.Name);
                 command.Parameters.Add("@Name", item.Name);
                 command.Parameters.Add("@Description", item.Description);
                 command.Parameters.Add("@IsLot", item.IsLot);
@@ -179,103 +202,82 @@ public void UpdateInventoryItem(InventoryItem item)
             }
         }
     }
-}
 
-public void AddInventoryItem(InventoryItem item)
-{
-    InventoryItems.Add(item);
-
-    using (var connection = new SqliteConnection(connectionString))
+    public void AddOrUpdateLotCurrent(InventoryItem item, DateTime date, int inLot, int outLot)
     {
-        connection.Open();
-        string query = "INSERT INTO InventoryItem (Name, Description, IsLot, IsSerialed) VALUES (@Name, @Description, @IsLot, @IsSerialed)";
-
-        using (var command = new SqliteCommand(query, connection))
+        using (var connection = new SqliteConnection(connectionString))
         {
-            command.Parameters.Add("@Name", item.Name);
-            command.Parameters.Add("@Description", item.Description);
-            command.Parameters.Add("@IsLot", item.IsLot);
-            command.Parameters.Add("@IsSerialed", item.IsSerialed);
-            command.ExecuteNonQuery();
-        }
-    }
-}
-
-public void AddOrUpdateLotCurrent(InventoryItem item, DateTime date, int inLot, int outLot)
-{
-    using (var connection = new SqliteConnection(connectionString))
-    {
-        connection.Open();
-        string query;
-
-        if (inLot > 0)
-        {
-            query = "INSERT OR REPLACE INTO LotCurrent (Name, InLot, InDate) VALUES (@Name, @InLot, @InDate)";
-        }
-        else
-        {
-            query = "INSERT OR REPLACE INTO LotCurrent (Name, OutLot, OutDate) VALUES (@Name, @OutLot, @OutDate)";
-        }
-
-        using (var command = new SqliteCommand(query, connection))
-        {
-            command.Parameters.Add("@Name", DbType.String).Value = item.Name;
+            connection.Open();
+            string query;
 
             if (inLot > 0)
             {
-                command.Parameters.Add("@InLot", DbType.Int32).Value = inLot;
-                command.Parameters.Add("@InDate", DbType.DateTime).Value = date;
+                query = "INSERT OR REPLACE INTO LotCurrent (Name, InLot, InDate) VALUES (@Name, @InLot, @InDate)";
             }
             else
             {
-                command.Parameters.Add("@OutLot", DbType.Int32).Value = outLot;
-                command.Parameters.Add("@OutDate", DbType.DateTime).Value = date;
+                query = "INSERT OR REPLACE INTO LotCurrent (Name, OutLot, OutDate) VALUES (@Name, @OutLot, @OutDate)";
             }
 
-            command.ExecuteNonQuery();
+            using (var command = new SqliteCommand(query, connection))
+            {
+                command.Parameters.Add("@Name", DbType.String).Value = item.Name;
+
+                if (inLot > 0)
+                {
+                    command.Parameters.Add("@InLot", DbType.Int32).Value = inLot;
+                    command.Parameters.Add("@InDate", DbType.DateTime).Value = date;
+                }
+                else
+                {
+                    command.Parameters.Add("@OutLot", DbType.Int32).Value = outLot;
+                    command.Parameters.Add("@OutDate", DbType.DateTime).Value = date;
+                }
+
+                command.ExecuteNonQuery();
+            }
         }
     }
-}
 
-public LotCurrent GetLotCurrent(string itemName)
-{
-    LotCurrent lotCurrent = null;
-
-    using (var connection = new SqliteConnection(connectionString))
+    public LotCurrent GetLotCurrent(string itemName)
     {
-        connection.Open();
-        string query = "SELECT * FROM LotCurrent WHERE Name = @Name";
+        LotCurrent lotCurrent = null;
 
-        using (var command = new SqliteCommand(query, connection))
+        using (var connection = new SqliteConnection(connectionString))
         {
-            command.Parameters.Add("@Name", DbType.String).Value = itemName;
+            connection.Open();
+            string query = "SELECT * FROM LotCurrent WHERE Name = @Name";
 
-            using (IDataReader reader = command.ExecuteReader())
+            using (var command = new SqliteCommand(query, connection))
             {
-                if (reader.Read())
+                command.Parameters.Add("@Name", DbType.String).Value = itemName;
+
+                using (IDataReader reader = command.ExecuteReader())
                 {
-                    lotCurrent = new LotCurrent(
-                        reader.GetString(0),
-                        reader.GetInt32(1),
-                        reader.GetDateTime(2),
-                        reader.GetInt32(3),
-                        reader.GetDateTime(4)
-                    );
+                    if (reader.Read())
+                    {
+                        lotCurrent = new LotCurrent(
+                            reader.GetString(0),
+                            reader.GetInt32(1),
+                            reader.GetDateTime(2),
+                            reader.GetInt32(3),
+                            reader.GetDateTime(4)
+                        );
+                    }
                 }
             }
         }
+
+        return lotCurrent;
     }
 
-    return lotCurrent;
-}
-
-private void ConnectToDatabase()
-{
-    using (var connection = new SqliteConnection(connectionString))
+    private void ConnectToDatabase()
     {
-        connection.Open();
+        using (var connection = new SqliteConnection(connectionString))
+        {
+            connection.Open();
+        }
     }
-}
 
     private void LoadDataFromDatabase()
     {
@@ -487,7 +489,14 @@ private void ConnectToDatabase()
         qrCodeImage = LabelMaker.GenerateQRFromGoogleAPI(qrCodeData);
         return qrCodeImage;
     }
-
+    public async Task<Texture2D> GenerateDeviceLabelUPC(DeviceLabel label)
+    {
+        string upcCodeData = $"860009762107";
+        Debug.LogError("GenerateQRCode selected. upcCodeData: " + upcCodeData);
+        Texture2D UPCCodeImage = null;
+        UPCCodeImage = LabelMaker.GenerateUPCABarcodeTexture(upcCodeData);
+        return UPCCodeImage;
+    }
     public async Task PrintInventoryLabelsAsync(InventoryItem item, int printQuantity, string printerIPAddress, int lotNumber = 0, string serialNumber = "")
     {
         for (int i = 0; i < printQuantity; i++)
@@ -502,43 +511,31 @@ private void ConnectToDatabase()
          //   await Task.Delay(TimeSpan.FromSeconds(1));
         }
     }
-    PrinterSettings settings = new PrinterSettings
-    {
-        PrinterName = "Zebra",
-        PrinterType = 'A',
-        PrinterPort = 0,
-        AlignLeft = 0,
-        AlignTop = 0,
-        AlignTearOff = 0,
-        Darkness = 30,
-        PrintSpeed = 5,
-        Width = 800,
-        Length = 1200,
-        RamDrive = 'E'
-    };
     public async Task PrintDeviceLabelsAsync(DeviceLabel label, int printQuantity)
     {
-        pkNum = 1;
-        companyText = $"HTSInc";
-        labelNameText = $"{label.LabelName}";
-        productText = $"{label.ProductHeading}";
-        subheadingText = $"{label.ProductSubHeading}";
-        pkNumText = $"{pkNum}of{printQuantity}";
-        pairs = new List<StringTexturePair> { new StringTexturePair("InstructionsforUse", icon1), new StringTexturePair("RxOnly", icon2), new StringTexturePair(addressText, icon3) };
+        int pkNum = 1;
+        string companyText = $"HTSInc";
+        string labelNameText = $"{label.LabelName}";
+        string productText = $"{label.ProductHeading}";
+        string subheadingText = $"{label.ProductSubHeading}";
+
         unityMainThreadDispatcher.Enqueue(async () =>
         {
             for (int i = 0; i < printQuantity; i++)
             {
-                Debug.LogError("GenerateDeviceLabelDataAsync selected.");
                 Texture2D qrTexture = null;
+                Texture2D upcTexture = null;
                 qrTexture = await GenerateDeviceLabelQR(label);
-                Debug.LogError(qrTexture.width);
+                upcTexture = await GenerateDeviceLabelUPC(label);
+                
+                _ = await PrintCam.AssignLabel(qrTexture, upcTexture, "860009762107", companyText, labelNameText, productText, subheadingText, pkNum, printQuantity);
                 pkNum++;
-                // Send label to printer
-                await LabelMaker.SendTexture2DToUSBPrinterAsync(qrTexture);
+                _ = LabelMaker.SendTexture2DToUSBPrinterAsync(PrintCam.PrintLabel(PrintCam.labelCam, PrintCam.renderTexture).Result);
+                string pkNumText = $"{pkNum}of{printQuantity}";
             }
         });
     }
+
 }
 public class InventoryItem
 {

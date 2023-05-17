@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Linq;
+using System.Threading.Tasks;
 
 public class UIManager : MonoBehaviour
 {
@@ -23,26 +24,41 @@ public class UIManager : MonoBehaviour
     public object LeanTween { get; private set; }
 
     public void UpdateButtonTexts(string buttonParent)
-    {
+    {        
+        var maxlength = buttonParent == "left" ? maxLChildren : maxRChildren;
+        for (int i = 0; i < maxlength; i++)
+        {
+            if (buttonParent == "left")            
+                leftButtonParent.transform.GetChild(i).gameObject.SetActive(true);            
+            else
+                rightButtonParent.transform.GetChild(i).gameObject.SetActive(true);
+        }
         Button[] buttonArray = buttonParent == "left" ? leftButtonParent.GetComponentsInChildren<Button>() : rightButtonParent.GetComponentsInChildren<Button>();
-        for (int i = 0; i < buttonArray.Length; i++)
+        for (int i = 0; i < maxlength; i++)
         {
             string key;
+           
             if (buttonParent == "left")
             {
                 key = $"L{i}";
                 if (AppManager.uiTextDictionary.ContainsKey(key) && !AppManager.uiTextDictionary.Keys.Any(k => k.StartsWith("R")))
                 {
+                    buttonArray[i].gameObject.SetActive(true);
                     buttonArray[i].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
                 }
+                else if (buttonArray[i] != null)
+                    buttonArray[i].gameObject.SetActive(false);
             }
             else
             {
                 key = curViewLKey + $"R{i}";
                 if (AppManager.uiTextDictionary.ContainsKey(key))
                 {
+                    buttonArray[i].gameObject.SetActive(true);
                     buttonArray[i].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
                 }
+                else if(buttonArray[i] != null)
+                    buttonArray[i].gameObject.SetActive(false);
             }
         }
     }
@@ -51,11 +67,35 @@ public class UIManager : MonoBehaviour
         uiObjects["Dropdown"].SetActive(enable);
         if (enable)
         {
-            string key = curViewKey + "C0";
+            string key = curViewKey + "D0";
             if (AppManager.uiTextDictionary.ContainsKey(key))
             {
                 uiObjects["Dropdown"].transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
             }
+        }
+    }
+    public void OnToggleText(bool isOn)
+    {
+        if (curView == "LotHandling")
+        {
+            
+            uiObjects["Toggle"].transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = isOn ? "Incoming" : "Outgoing";
+            if(curViewKey == "L0R0")
+                uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = isOn ? "Save Inc" : "Save Out";
+            else if (curViewKey == "L0R1")
+                uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = isOn ? "Add" : "Remove";
+            else
+                uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = isOn ? "Print Inc" : "Print Out";
+        }
+        else if (curView == "Shipment")
+        {
+            uiObjects["Toggle"].transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = isOn ? "Add" : "Remove";
+            uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = isOn ? "Add LabelType" : "Remove LabelType";
+        }
+        else if (curView == "Inventory")
+        {
+            uiObjects["Toggle"].transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = isOn ? "Add" : "Subtract";
+            uiObjects["actionButton"].GetComponentInChildren<TextMeshProUGUI>().text = isOn ? "Add" : "Subtract";
         }
     }
     public void OnDropdownValueChanged(int selectedIndex)
@@ -76,7 +116,7 @@ public class UIManager : MonoBehaviour
         uiObjects["Toggle"].SetActive(enable);
         if (enable)
         {
-            string key = curViewKey + "C1";
+            string key = curViewKey + "T0";
             if (AppManager.uiTextDictionary.ContainsKey(key))
             {
                 uiObjects["Toggle"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
@@ -116,7 +156,7 @@ public class UIManager : MonoBehaviour
             uiObjects[$"InputField{i}"].SetActive(i <= index ? true : false);
             if (i <= index)
             {
-                string key = curViewKey + "C" + (i + 2).ToString();
+                string key = curViewKey + $"I{i}";
                 if (AppManager.uiTextDictionary.ContainsKey(key))
                 {                    
                     uiObjects[$"InputField{i}"].GetComponentInChildren<TextMeshProUGUI>().text = AppManager.uiTextDictionary[key];
@@ -132,6 +172,67 @@ public class UIManager : MonoBehaviour
         colorBlock.highlightedColor = Color.Lerp(colorBlock.normalColor, Color.white, 0.5f);
         colorBlock.pressedColor = Color.Lerp(colorBlock.normalColor, Color.black, 0.5f);
         button.colors = colorBlock;
+    }
+    public static class TextToTexture
+    {
+        public static async Task<Texture2D> StringToTexture2D(string text, int width, int height, TMP_FontAsset fontAsset, int fontSize, Color textColor)
+        {
+            // Create a new TextMeshProUGUI object
+            GameObject textObject = new GameObject("TextToTexture");
+            TextMeshProUGUI textMeshPro = textObject.AddComponent<TextMeshProUGUI>();
+
+            // Set TextMeshPro properties
+            textMeshPro.text = text;
+            textMeshPro.fontSize = fontSize;
+            textMeshPro.font = fontAsset;
+            textMeshPro.color = textColor;
+            textMeshPro.alignment = TextAlignmentOptions.Center;
+            textMeshPro.enableWordWrapping = true;
+
+            // Create a new Canvas object
+            GameObject canvasObject = new GameObject("TextToTextureCanvas");
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvasObject.AddComponent<CanvasScaler>();
+            canvasObject.AddComponent<GraphicRaycaster>();
+
+            // Set the TextMeshProUGUI object as a child of the Canvas object
+            textObject.transform.SetParent(canvasObject.transform);
+
+            // Create a new Camera object
+            GameObject cameraObject = new GameObject("TextToTextureCamera");
+            Camera camera = cameraObject.AddComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = height / 2;
+            camera.transform.position = new Vector3(width / 2, height / 2, -10);
+
+            // Wait for one frame to let the canvas update
+            await Task.Delay(1);
+
+            // Create a new RenderTexture
+            RenderTexture renderTexture = new RenderTexture(width, height, 24);
+            renderTexture.Create();
+
+            // Render the canvas to the RenderTexture using the camera
+            camera.targetTexture = renderTexture;
+            camera.Render();
+
+            // Convert the RenderTexture to a Texture2D
+            Texture2D finalTexture = null;
+            finalTexture = new Texture2D(width, height);
+            RenderTexture.active = renderTexture;
+            finalTexture.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
+            finalTexture.Apply();
+            RenderTexture.active = null;
+
+            // Clean up the created objects
+            Object.Destroy(textObject);
+            Object.Destroy(canvasObject);
+            Object.Destroy(cameraObject);
+            Object.Destroy(renderTexture);
+
+            return finalTexture;
+        }
     }
     public void Initialize(InventoryManager manager, Canvas can, IncomingOutgoingPanel iop)
     {
@@ -185,6 +286,7 @@ public class UIManager : MonoBehaviour
         uiObjects["Title"] = uiObjects["centerContent"].transform.Find("Title").gameObject;
         uiObjects["LabelDescriptor"] = uiObjects["centerContent"].transform.Find("LabelDescriptor").gameObject;
         uiObjects["Dropdown"].GetComponent<TMP_Dropdown>().onValueChanged.AddListener(OnDropdownValueChanged);
+        uiObjects["Toggle"].GetComponent<Toggle>().onValueChanged.AddListener(OnToggleText);
 
         int inputFieldIndex = 0;
         Transform currentInputField = uiObjects["centerContent"].transform.Find($"InputField (TMP) ({inputFieldIndex})");
@@ -211,15 +313,15 @@ public class UIManager : MonoBehaviour
                 {
                     case 0:
                         curViewKey = "L0R0";
-                        SetUIElements("LotHandling", 1, true, true, false);
+                        SetUIElements("LotHandling", 0, true, true, false);
                         break;
                     case 1:
                         curViewKey = "L0R1";
-                        SetUIElements("LotHandling", 2, false, false, false);
+                        SetUIElements("LotHandling", 1, false, true, false);
                         break;
                     case 2:
                         curViewKey = "L0R2";
-                        SetUIElements("LotHandling", 1, true, true, false);
+                        SetUIElements("LotHandling", 0, true, true, false);
                         break;
                 }
                 break;
@@ -228,15 +330,15 @@ public class UIManager : MonoBehaviour
                 {
                     case 0:
                         curViewKey = "L1R0";
-                        SetUIElements("Shipment",  1, true, false, true);
+                        SetUIElements("Shipment",  2, true, false, true);
                         break;
                     case 1:
                         curViewKey = "L1R1";
-                        SetUIElements("Shipment", 3, false, true, false);
+                        SetUIElements("Shipment", 2, false, true, false);
                         break;
                     case 2:
                         curViewKey = "L1R2";
-                        SetUIElements("Shipment",  3, true, false, false);
+                        SetUIElements("Shipment", 2, true, false, false);
                         break;
                 }
                 break;
@@ -245,11 +347,11 @@ public class UIManager : MonoBehaviour
                 {
                     case 0:
                         curViewKey = "L2R0";
-                        SetUIElements("Inventory", 1, true, true, false);
+                        SetUIElements("Inventory", 0, true, true, false);
                         break;
                     case 1:
                         curViewKey = "L2R1";
-                        SetUIElements("Inventory", 2, false, true, false);
+                        SetUIElements("Inventory", 1, false, true, false);
                         break;
                 }
                 break;

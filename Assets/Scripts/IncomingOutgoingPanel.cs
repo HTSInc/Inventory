@@ -17,6 +17,10 @@ public class IncomingOutgoingPanel : MonoBehaviour
     private GameObject[] inputFields = new GameObject[7];
     private Button centerActionButton;
     private Button centerCancelButton;
+    int isLot = 0;
+    int isSerialed = 0;
+    public static List<string> itemNames;
+    public static List<DeviceLabel> deviceLabels;
 
     public void Initialize(InventoryManager manager, UIManager uiInstance)
     {
@@ -37,6 +41,7 @@ public class IncomingOutgoingPanel : MonoBehaviour
     {
         await Task.Run(async () => await asyncMethod());
     }
+
     public void SetCenterButtonActions(string panelName, int action)
     {
         centerActionButton.onClick.RemoveAllListeners();
@@ -46,13 +51,10 @@ public class IncomingOutgoingPanel : MonoBehaviour
         centerCancelButton.onClick.AddListener(() => OnCancel());
     }
 
-
-    public static List<string> itemNames;
-    public static List<DeviceLabel> deviceLabels;
     public void UpdateUI()
     {
         inventoryDropdown.ClearOptions();
-
+        ClearInputFields();
         switch (uiManager.curView)
         {
             case "LotHandling":
@@ -139,7 +141,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
         await inventoryManager.PrintInventoryLabelsAsync(item, printQuantity, printerIPAddress, lotNumber, serialNumber);
     }
 
-
     private void PrintDeviceLabels()
     {
         string labelName = inventoryDropdown.options[inventoryDropdown.value].text;
@@ -154,8 +155,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
         _ = Task.Run(() => inventoryManager.PrintDeviceLabelsAsync(label, 1));
     }
 
-
-
     private void ClearInputFields()
     {
         for (int i = 0; i <= uiManager.maxCChildren; i++)
@@ -163,9 +162,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
             uiManager.uiObjects[$"InputField{i}"].GetComponent<TMP_InputField>().text = "";
         }
     }
-    int isLot = 0;
-    int isSerialed = 0;
-
 
     private void AddOrUpdateInventoryItem()
     {
@@ -334,14 +330,7 @@ public class IncomingOutgoingPanel : MonoBehaviour
                         await PrintInventoryLabelsAsync();
                         break;
                     case 2:
-                        if (uiManager.curViewLKey == "L0")
-                        {
-                            await PrintInventoryLabelsAsync();
-                        }
-                        else if (uiManager.curViewLKey == "L1")
-                        {
-                            PrintDeviceLabels();
-                        }
+                        PrintInventoryLabelsAsync();
                         break;
                 }
                 break;
@@ -350,7 +339,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 {
                     case 0:
                         PrintDeviceLabels();
-                        //AddToDeviceLabelHistory();
                         break;
                     case 1:
                         AddOrUpdateDeviceLabelItem();
@@ -377,8 +365,6 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 break;
         }
     }
-
-
 
     public void OnCancel()
     {
