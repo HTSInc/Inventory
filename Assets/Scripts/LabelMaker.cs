@@ -34,7 +34,7 @@ public static class LabelMaker
     public static string SendZPLCommandToUSBPrinter(string zplCommand)
     {
         PrinterSettings x = new PrinterSettings();
-        x.PrinterName = "Zebra";
+        x.PrinterName = "Zebra  ZP 450-200 dpi";
         x.PrinterPort = 0;
        
         IZebraPrinter printer = new USBPrinter(x);

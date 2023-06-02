@@ -138,7 +138,7 @@ public class IncomingOutgoingPanel : MonoBehaviour
         int lotNumber = item.IsLot == 1 ? int.Parse(inputFields[10].GetComponent<TMP_InputField>().text.Trim()) : 0;
         string serialNumber = item.IsSerialed == 1 ? inputFields[11].GetComponent<TMP_InputField>().text.Trim() : "";
 
-        await inventoryManager.PrintInventoryLabelsAsync(item, printQuantity, printerIPAddress, lotNumber, serialNumber);
+        await inventoryManager.PrintInventoryLabelsAsync(item, printQuantity, printerIPAddress);
     }
 
     private void PrintDeviceLabels()
@@ -150,9 +150,21 @@ public class IncomingOutgoingPanel : MonoBehaviour
             Debug.LogError("Invalid label selected.");
             return;
         }
-
-        Debug.LogError("Valid label selected.");
-        _ = Task.Run(() => inventoryManager.PrintDeviceLabelsAsync(label, 1));
+        DeviceLabel labelprint = new DeviceLabel("", "", "", "", "", "", "");
+        int pkNum = 1;
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+        {
+            Debug.LogError("Valid label selected.");
+            labelprint = new DeviceLabel(label.ProductHeading, label.ProductSubHeading, label.LabelName, uiManager.uiObjects["InputField3"].GetComponent<TMP_InputField>().text.Trim(), uiManager.uiObjects["InputField4"].GetComponent<TMP_InputField>().text.Trim(), uiManager.uiObjects["InputField5"].GetComponent<TMP_InputField>().text.Trim(), uiManager.uiObjects["InputField6"].GetComponent<TMP_InputField>().text.Trim());
+            pkNum = int.Parse(uiManager.uiObjects["InputField2"].GetComponent<TMP_InputField>().text.Trim());
+        });
+        
+        string qCodeData = "L: " + labelprint.LabelName + "PH: " + labelprint.ProductHeading + "PSH: " + labelprint.ProductSubHeading + "ID: " + labelprint.ProductId + "LSN: " + labelprint.LaptopSN + "HSN: " + labelprint.HoloSN + "ESN: " + labelprint.RouterSN + "XSN: " + labelprint.XboxSN + " ";
+        _ = Task.Run(async () =>
+        {
+            AddToDeviceLabelHistory(labelprint); 
+            _ = inventoryManager.PrintDeviceLabelsAsync(labelprint, pkNum, qCodeData);
+        });
     }
 
     private void ClearInputFields()
@@ -216,7 +228,7 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 return;
             }
 
-            DeviceLabel newLabel = new DeviceLabel(0, productHeading, productSubheading, labelName);
+            DeviceLabel newLabel = new DeviceLabel(productHeading, productSubheading, labelName);
             inventoryManager.AddDeviceLabel(newLabel);
             Debug.Log("Added new device label: " + labelName);
         }
@@ -298,18 +310,17 @@ public class IncomingOutgoingPanel : MonoBehaviour
                 break;
         }
     }
-    private void AddToDeviceLabelHistory()
+    public void AddToDeviceLabelHistory(DeviceLabel lbl)
     {
         DateTime date = DateTime.Now;
-        string itemName = uiManager.uiObjects["Dropdown"].GetComponent<TMP_Dropdown>().options[inventoryDropdown.value].text;
-        DeviceLabel lbl = inventoryManager.GetDeviceLabelByName(itemName);
 
         if (lbl == null)
         {
             Debug.LogError("Invalid item selected.");
-            return;
+
         }
         inventoryManager.AddDeviceLabelHistory(lbl, date);
+
     }
 
     public async Task OnSubmit(string panelName, int action)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using static UnityEditor.PlayerSettings;
 
 public class AppManager : MonoBehaviour
 {
@@ -43,6 +44,10 @@ public class AppManager : MonoBehaviour
     { "L1R0I0", "Order #" },
     { "L1R0I1", "Account #" },
     { "L1R0I2", "Label Quantity" },
+    { "L1R0I3", "Laptop SN" },
+    { "L1R0I4", "Router SN" },
+    { "L1R0I5", "Holo SN" },
+    { "L1R0I6", "Xbox SN" },
     { "L1R0A1", "Save & Ship" },
     { "L1R0A2", "Cancel" },
     { "L1R1", "Modify LabelType" },

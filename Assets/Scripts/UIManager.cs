@@ -330,7 +330,7 @@ public class UIManager : MonoBehaviour
                 {
                     case 0:
                         curViewKey = "L1R0";
-                        SetUIElements("Shipment",  2, true, false, true);
+                        SetUIElements("Shipment",  6, true, false, true);
                         break;
                     case 1:
                         curViewKey = "L1R1";

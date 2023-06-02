@@ -15,6 +15,7 @@ using System.Collections;
 using SharpZebra.Printing;
 using Object = UnityEngine.Object;
 using static UIManager;
+using static UnityEditor.PlayerSettings;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -46,14 +47,14 @@ public class InventoryManager : MonoBehaviour
         InventoryItems = new List<InventoryItem>();
         deviceLabels = new List<DeviceLabel>();
         connectionString = "URI=file:" + Application.dataPath + "/InventoryDatabase.db";
-        InitializeDatabase();
+        StartCoroutine(InitializeDatabase());
         unityMainThreadDispatcher = GameObject.Find("UnityMainThreadDispatcher").GetComponent<UnityMainThreadDispatcher>();
         unityMainThreadDispatcher = UnityMainThreadDispatcher.Instance();
         icon1 = Resources.Load<Texture2D>("Resourcefolder/icon1");
         icon2 = Resources.Load<Texture2D>("Resourcefolder/icon2");
         icon3 = Resources.Load<Texture2D>("Resourcefolder/icon3");
     }
-    private void InitializeDatabase()
+    private IEnumerator InitializeDatabase()
     {
         if (!File.Exists(connectionString))
         {
@@ -62,8 +63,12 @@ public class InventoryManager : MonoBehaviour
         else
         {
             ConnectToDatabase();
-            LoadDataFromDatabase();
+            
         }
+        yield return new WaitForFixedUpdate();
+        LoadDataFromDatabase();
+        yield break;
+
     }
 
     private void CreateDatabase()
@@ -71,53 +76,41 @@ public class InventoryManager : MonoBehaviour
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
-
             // Table for item, lot, and serialized items
-            string createInventoryItemTable = "CREATE TABLE IF NOT EXISTS InventoryItem (Name TEXT PRIMARY KEY, Description TEXT, IsLot INTEGER, IsSerialed INTEGER)";
-
+            string createInventoryItemTable = "CREATE TABLE IF NOT EXISTS InventoryItem(Name TEXT PRIMARY KEY, Description TEXT, IsLot INTEGER, IsSerialed INTEGER)";
             // Table for item history
-            string createItemHistoryTable = "CREATE TABLE IF NOT EXISTS ItemHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Quantity INTEGER)";
-
+            string createItemHistoryTable = "CREATE TABLE IF NOT EXISTS ItemHistory(Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Quantity INTEGER)";
             // Table for lot history
-            string createLotHistoryTable = "CREATE TABLE IF NOT EXISTS LotHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Incoming INTEGER, LotNumber INTEGER)";
-
+            string createLotHistoryTable = "CREATE TABLE IF NOT EXISTS LotHistory(Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, Incoming INTEGER, LotNumber INTEGER)";
             // Table for lot history
-            string createLotCurrent = "CREATE TABLE IF NOT EXISTS LotCurrent (Name TEXT PRIMARY KEY, InLot INTEGER, InDate DATETIME, OutLot INTEGER, OutDate DATETIME)";
-
+            string createLotCurrent = "CREATE TABLE IF NOT EXISTS LotCurrent(Name TEXT PRIMARY KEY, InLot INTEGER, InDate DATETIME, OutLot INTEGER, OutDate DATETIME)";
             // Table for serialized history
-            string createSerializedHistoryTable = "CREATE TABLE IF NOT EXISTS SerializedHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, SerialNumber TEXT)";
-
-            // Table for DeviceLabels
-            string createDeviceLabelTable = "CREATE TABLE IF NOT EXISTS DeviceLabel (Id INTEGER PRIMARY KEY AUTOINCREMENT, ProductHeading TEXT, ProductSubHeading TEXT, LabelName TEXT)";
-
-            // Table for DeviceLabel history
-            string createDeviceLabelHistoryTable = "CREATE TABLE IF NOT EXISTS DeviceLabelHistory (Id INTEGER PRIMARY KEY AUTOINCREMENT, LabelName TEXT, Date DATETIME)";
+            string createSerializedHistoryTable = "CREATE TABLE IF NOT EXISTS SerializedHistory(Id INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Date DATETIME, SerialNumber TEXT)";
+            // Table for Device Labels
+            string createDeviceLabelTable = "CREATE TABLE IF NOT EXISTS DeviceLabel(Id INTEGER PRIMARY KEY AUTOINCREMENT, ProductHeading TEXT, ProductSubHeading TEXT, LabelName TEXT)";
+            // Table for Device Label history
+            string createDeviceLabelHistoryTable = "CREATE TABLE IF NOT EXISTS DeviceLabelHistory(Id INTEGER PRIMARY KEY AUTOINCREMENT, LabelName TEXT, Date DATETIME, HoloSN TEXT, LaptopSN TEXT, XboxSN TEXT, RouterSN TEXT)";
 
             using (var command = new SqliteCommand(createInventoryItemTable, connection))
             {
                 command.ExecuteNonQuery();
             }
-
             using (var command = new SqliteCommand(createItemHistoryTable, connection))
             {
                 command.ExecuteNonQuery();
             }
-
             using (var command = new SqliteCommand(createLotHistoryTable, connection))
             {
                 command.ExecuteNonQuery();
             }
-
             using (var command = new SqliteCommand(createSerializedHistoryTable, connection))
             {
                 command.ExecuteNonQuery();
             }
-
             using (var command = new SqliteCommand(createDeviceLabelTable, connection))
             {
                 command.ExecuteNonQuery();
             }
-
             using (var command = new SqliteCommand(createDeviceLabelHistoryTable, connection))
             {
                 command.ExecuteNonQuery();
@@ -128,6 +121,7 @@ public class InventoryManager : MonoBehaviour
             }
         }
     }
+
     public List<string> GetItemNames(int isLot, int isSerialized)
 {
     List<string> itemNames = new List<string>();
@@ -281,6 +275,7 @@ public class InventoryManager : MonoBehaviour
 
     private void LoadDataFromDatabase()
     {
+        int i = 0;
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
@@ -292,8 +287,8 @@ public class InventoryManager : MonoBehaviour
                 using (IDataReader reader = command.ExecuteReader())
                 {
                     while (reader.Read())
-                    {
-                        var item = new InventoryItem(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetInt32(4));
+                    {                       
+                        var item = new InventoryItem(i, reader.GetString(0), reader.GetString(1),  reader.GetInt32(2),  reader.GetInt32(3));
                         InventoryItems.Add(item);
                     }
                 }
@@ -306,7 +301,7 @@ public class InventoryManager : MonoBehaviour
                 {
                     while (reader.Read())
                     {
-                        var label = new DeviceLabel(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
+                        var label = new DeviceLabel(reader.GetString(0), reader.GetString(1), reader.GetString(2));
                         deviceLabels.Add(label);
                     }
                 }
@@ -316,17 +311,19 @@ public class InventoryManager : MonoBehaviour
     public void AddDeviceLabel(DeviceLabel label)
     {
         deviceLabels.Add(label);
-
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
-            string query = "INSERT INTO DeviceLabel (ProductHeading, ProductSubHeading, LabelName) VALUES (@ProductHeading, @ProductSubHeading, @LabelName)";
-
+            string query = "INSERT INTO DeviceLabel(ProductHeading, ProductSubHeading, LabelName, HoloSN, LaptopSN, XboxSN, RouterSN) VALUES(@ProductHeading, @ProductSubHeading, @LabelName, @HoloSN, @LaptopSN, @XboxSN, @RouterSN)";
             using (var command = new SqliteCommand(query, connection))
             {
                 command.Parameters.Add("@ProductHeading", label.ProductHeading);
                 command.Parameters.Add("@ProductSubHeading", label.ProductSubHeading);
                 command.Parameters.Add("@LabelName", label.LabelName);
+                command.Parameters.Add("@HoloSN", label.HoloSN);
+                command.Parameters.Add("@LaptopSN", label.LaptopSN);
+                command.Parameters.Add("@XboxSN", label.XboxSN);
+                command.Parameters.Add("@RouterSN", label.RouterSN);
                 command.ExecuteNonQuery();
             }
         }
@@ -385,12 +382,15 @@ public class InventoryManager : MonoBehaviour
         using (var connection = new SqliteConnection(connectionString))
         {
             connection.Open();
-            string query = "INSERT INTO DeviceLabelHistory (LabelName, Date) VALUES (@LabelName, @Date)";
-
+            string query = "INSERT INTO DeviceLabelHistory(LabelName, Date, HoloSN, LaptopSN, XboxSN, RouterSN) VALUES(@LabelName, @Date, @HoloSN, @LaptopSN, @XboxSN, @RouterSN)";
             using (var command = new SqliteCommand(query, connection))
             {
                 command.Parameters.Add("@LabelName", label.LabelName);
                 command.Parameters.Add("@Date", date);
+                command.Parameters.Add("@HoloSN", label.HoloSN);
+                command.Parameters.Add("@LaptopSN", label.LaptopSN);
+                command.Parameters.Add("@XboxSN", label.XboxSN);
+                command.Parameters.Add("@RouterSN", label.RouterSN);
                 command.ExecuteNonQuery();
             }
         }
@@ -402,12 +402,10 @@ public class InventoryManager : MonoBehaviour
         if (index != -1)
         {
             deviceLabels[index] = label;
-
             using (var connection = new SqliteConnection(connectionString))
             {
                 connection.Open();
-                string query = "UPDATE DeviceLabel SET ProductHeading = @ProductHeading, ProductSubHeading = @ProductSubHeading, LabelName = @LabelName WHERE LabelName = @OldLabelName";
-
+                string query = "UPDATE DeviceLabel SET ProductHeading=@ProductHeading, ProductSubHeading=@ProductSubHeading, LabelName=@LabelName WHERE LabelName=@OldLabelName";
                 using (var command = new SqliteCommand(query, connection))
                 {
                     command.Parameters.Add("@OldLabelName", label.LabelName);
@@ -419,6 +417,7 @@ public class InventoryManager : MonoBehaviour
             }
         }
     }
+
     public InventoryItem GetInventoryItemByName(string name)
     {
         return InventoryItems.Find(item => item.Name == name);
@@ -443,7 +442,11 @@ public class InventoryManager : MonoBehaviour
                         string labelName = reader.GetString(1);
                         string productHeading = reader.GetString(2);
                         string productSubHeading = reader.GetString(0);
-                        DeviceLabel deviceLabel = new DeviceLabel(labelName, productHeading, productSubHeading);
+                        string laptopSN = uiManager.uiObjects["InputField3"].GetComponent<TMP_InputField>().text.Trim();
+                        string routerSN = uiManager.uiObjects["InputField4"].GetComponent<TMP_InputField>().text.Trim();
+                        string holoSN = uiManager.uiObjects["InputField5"].GetComponent<TMP_InputField>().text.Trim();
+                        string xboxSN = uiManager.uiObjects["InputField6"].GetComponent<TMP_InputField>().text.Trim();
+                        DeviceLabel deviceLabel = new DeviceLabel(labelName, productHeading, productSubHeading, holoSN, laptopSN, xboxSN, routerSN);
                         deviceLabels.Add(deviceLabel);
                     }
                 }
@@ -481,10 +484,16 @@ public class InventoryManager : MonoBehaviour
         yield return coroutine;
         tcs.SetResult(null);
     }
-    public async Task<Texture2D> GenerateDeviceLabelQR(DeviceLabel label)
+    public async Task<Texture2D> GenerateDeviceLabelQR(string qrCodeData)
+    {      
+        Texture2D qrCodeImage = null;
+        qrCodeImage = LabelMaker.GenerateQRFromGoogleAPI(qrCodeData);
+        return qrCodeImage;
+    }
+    public async Task<Texture2D> GenerateInventoryLabelQR(string nameText, string dateText, string statusText, string lotText)
     {
-        string qrCodeData = $"test";
-        Debug.LogError("GenerateQRCode selected. qrCodeData: " + qrCodeData);
+        string qrCodeData = nameText + dateText + statusText + lotText;
+        Debug.LogError("GenerateInventoryQRCode selected. qrCodeData: " + qrCodeData);
         Texture2D qrCodeImage = null;
         qrCodeImage = LabelMaker.GenerateQRFromGoogleAPI(qrCodeData);
         return qrCodeImage;
@@ -497,41 +506,43 @@ public class InventoryManager : MonoBehaviour
         UPCCodeImage = LabelMaker.GenerateUPCABarcodeTexture(upcCodeData);
         return UPCCodeImage;
     }
-    public async Task PrintInventoryLabelsAsync(InventoryItem item, int printQuantity, string printerIPAddress, int lotNumber = 0, string serialNumber = "")
+    public async Task PrintInventoryLabelsAsync(InventoryItem item, int printQuantity, string printerIPAddress)
     {
-        for (int i = 0; i < printQuantity; i++)
-        {
-            string labelData = GenerateInventoryLabelData(item, lotNumber, serialNumber);
-            int x = 0;
-            int y = 0;
-            int labelWidth = 1200;
-            int labelHeight = 1800;
-         //   string zplCommand = LabelMaker.CreateZPLCommandString(labelData, x, y, labelWidth, labelHeight);
-         //   await LabelMaker.SendZPLCommandToPrinterAsync(zplCommand, "Zebra", "USB001");
-         //   await Task.Delay(TimeSpan.FromSeconds(1));
-        }
-    }
-    public async Task PrintDeviceLabelsAsync(DeviceLabel label, int printQuantity)
-    {
-        int pkNum = 1;
-        string companyText = $"HTSInc";
-        string labelNameText = $"{label.LabelName}";
-        string productText = $"{label.ProductHeading}";
-        string subheadingText = $"{label.ProductSubHeading}";
+        string nameText = $"{item.Name}";
+        string dateText = $"{item.Date}";
+        string statusText = $"{item.Incoming}";
+        string lotText = $"{item.LotNumber}"; 
 
         unityMainThreadDispatcher.Enqueue(async () =>
         {
             for (int i = 0; i < printQuantity; i++)
             {
                 Texture2D qrTexture = null;
-                Texture2D upcTexture = null;
-                qrTexture = await GenerateDeviceLabelQR(label);
-                upcTexture = await GenerateDeviceLabelUPC(label);
-                
-                _ = await PrintCam.AssignLabel(qrTexture, upcTexture, "860009762107", companyText, labelNameText, productText, subheadingText, pkNum, printQuantity);
-                pkNum++;
+                qrTexture = await GenerateInventoryLabelQR(nameText, dateText, statusText, lotText);
+                _ = await PrintCam.AssignInventoryLabel(qrTexture, nameText, dateText, statusText, lotText);
                 _ = LabelMaker.SendTexture2DToUSBPrinterAsync(PrintCam.PrintLabel(PrintCam.labelCam, PrintCam.renderTexture).Result);
-                string pkNumText = $"{pkNum}of{printQuantity}";
+            }
+        });
+    }
+    public async Task PrintDeviceLabelsAsync(DeviceLabel labelprint, int printQuantity, string qrCodeData)
+    {
+        unityMainThreadDispatcher.Enqueue(async () =>
+        {
+            for (int i = 0; i < printQuantity; i++)
+            {
+                Texture2D qrTexture = null;
+                Texture2D upcTexture = null;
+                qrTexture = await GenerateDeviceLabelQR(qrCodeData);
+                upcTexture = await GenerateDeviceLabelUPC(labelprint);
+                
+                _ = await PrintCam.AssignLabel(qrTexture, upcTexture, "860009762107", companyText, labelprint.LabelName, labelprint.ProductHeading, labelprint.ProductSubHeading, i + 1, printQuantity);
+                await Task.Delay(100);
+                Texture2D pic = PrintCam.PrintLabel(PrintCam.labelCam, PrintCam.renderTexture).Result;
+                await Task.Delay(100);
+                _ = LabelMaker.SendTexture2DToUSBPrinterAsync(pic);
+                await Task.Delay(100);
+                _ = LabelMaker.SendTexture2DToUSBPrinterAsync(pic);
+  
             }
         });
     }
@@ -584,6 +595,12 @@ public class DeviceLabel
     public string ProductHeading { get; set; }
     public string ProductSubHeading { get; set; }
     public string LabelName { get; set; }
+    public string HoloSN { get; set; }
+    public string LaptopSN { get; set; }
+    public string XboxSN { get; set; }
+    public string RouterSN { get; set; }
+
+
 
     public DeviceLabel(string productHeading, string productSubHeading, string labelName) 
     {
@@ -591,12 +608,15 @@ public class DeviceLabel
         ProductSubHeading = productSubHeading;
         LabelName = labelName;
     }
-    public DeviceLabel(int id, string productHeading, string productSubHeading, string labelName)
+    public DeviceLabel(string productHeading, string productSubHeading, string labelName, string holoSN, string laptopSN, string xboxSN, string routerSN)
     {
-        ProductId = id;
         ProductHeading = productHeading;
         ProductSubHeading = productSubHeading;
         LabelName = labelName;
+        HoloSN = holoSN;
+        LaptopSN = laptopSN;
+        XboxSN = xboxSN;
+        RouterSN = routerSN;
     }
 }
 
